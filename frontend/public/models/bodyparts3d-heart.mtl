@@ -1,0 +1,23 @@
+newmtl heart_surface
+Kd 0.72 0.39 0.39
+Ka 0.08 0.04 0.04
+Ks 0.18 0.18 0.18
+Ns 28
+
+newmtl artery_LAD
+Kd 0.43 0.53 0.61
+Ka 0.04 0.05 0.06
+Ks 0.18 0.18 0.18
+Ns 30
+
+newmtl artery_LCX
+Kd 0.43 0.53 0.61
+Ka 0.04 0.05 0.06
+Ks 0.18 0.18 0.18
+Ns 30
+
+newmtl artery_RCA
+Kd 0.43 0.53 0.61
+Ka 0.04 0.05 0.06
+Ks 0.18 0.18 0.18
+Ns 30

@@ -1,0 +1,13 @@
+.git
+.run
+**/.venv/
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/*.py[cod]
+**/.env
+data/**
+!data/.gitkeep
+*.log
+Thumbs.db
+.DS_Store

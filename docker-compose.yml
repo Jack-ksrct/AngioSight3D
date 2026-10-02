@@ -1,0 +1,35 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    expose:
+      - "8000"
+    environment:
+      MODEL_DIR: /models
+      ENABLE_API_DOCS: "false"
+    volumes:
+      - ./models:/models:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: /api
+    ports:
+      - "5173:80"
+    depends_on:
+      api:
+        condition: service_healthy

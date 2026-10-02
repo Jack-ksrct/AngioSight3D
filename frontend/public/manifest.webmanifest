@@ -1,0 +1,11 @@
+{
+  "name": "AngioSight Research Prototype",
+  "short_name": "AngioSight",
+  "description": "Educational CAD visualization prototype. Not for clinical use.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3f8fb",
+  "theme_color": "#f3f8fb",
+  "icons": [{ "src": "/logo.jpeg", "sizes": "1280x720", "type": "image/jpeg", "purpose": "any" }]
+}

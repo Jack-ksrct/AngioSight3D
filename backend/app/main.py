@@ -8,7 +8,7 @@ import time
 import uuid
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -17,7 +17,7 @@ from .modeling import load_bundle, metadata as load_metadata
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = Path(os.getenv("MODEL_DIR", ROOT / "models"))
-ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
 ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", "false").casefold() in {"1", "true", "yes"}
 MAX_BODY_BYTES = 16 * 1024
 logger = logging.getLogger("cardiomap.api")
@@ -130,18 +130,38 @@ async def request_safety_headers(request: Request, call_next):
     request.state.request_id = request_id
     started = time.perf_counter()
     content_length = request.headers.get("content-length")
-    if request.method == "POST" and content_length:
-        try:
-            if int(content_length) > MAX_BODY_BYTES:
-                response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the 16 KB limit."}})
+    if request.method == "POST":
+        if content_length:
+            try:
+                cl = int(content_length)
+                if cl < 0:
+                    response = JSONResponse(status_code=400, content={"error": {"code": "INVALID_CONTENT_LENGTH", "message": "Invalid request size.", "request_id": request_id}})
+                    response.headers["X-Request-ID"] = request_id
+                    add_security_headers(response, request.url.path)
+                    return response
+                if cl > MAX_BODY_BYTES:
+                    response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the 16 KB limit.", "request_id": request_id}})
+                    response.headers["X-Request-ID"] = request_id
+                    add_security_headers(response, request.url.path)
+                    return response
+            except ValueError:
+                response = JSONResponse(status_code=400, content={"error": {"code": "INVALID_CONTENT_LENGTH", "message": "Invalid request size.", "request_id": request_id}})
                 response.headers["X-Request-ID"] = request_id
                 add_security_headers(response, request.url.path)
                 return response
-        except ValueError:
-            response = JSONResponse(status_code=400, content={"error": {"code": "INVALID_CONTENT_LENGTH", "message": "Invalid request size."}})
-            response.headers["X-Request-ID"] = request_id
-            add_security_headers(response, request.url.path)
-            return response
+        # Content-Length can be absent for streamed/chunked requests. Bound the
+        # bytes as they arrive, then replay the bounded body for FastAPI parsing.
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > MAX_BODY_BYTES:
+                response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the 16 KB limit.", "request_id": request_id}})
+                response.headers["X-Request-ID"] = request_id
+                add_security_headers(response, request.url.path)
+                return response
+            body.extend(chunk)
+        # Starlette's BaseHTTPMiddleware replays a cached _body to downstream
+        # request parsing; setting it avoids losing the stream we just bounded.
+        request._body = bytes(body)
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     response.headers["Cache-Control"] = "no-store"
@@ -150,30 +170,32 @@ async def request_safety_headers(request: Request, call_next):
     return response
 
 
-def add_security_headers(response: JSONResponse, path: str) -> None:
+def add_security_headers(response: Response, path: str) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
-    if path not in {"/docs", "/openapi.json"}:
+    if path.rstrip("/") not in {"/docs", "/openapi.json"}:
         response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
 
 
 @app.exception_handler(RequestValidationError)
 async def invalid_request_handler(request: Request, _exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"error": {"code": "INVALID_REQUEST", "message": "Request data is invalid. Check the feature names and values.", "request_id": request.state.request_id}})
+    request_id = getattr(request.state, "request_id", "unavailable")
+    return JSONResponse(status_code=422, content={"error": {"code": "INVALID_REQUEST", "message": "Request data is invalid. Check the feature names and values.", "request_id": request_id}})
 
 
 @app.exception_handler(HTTPException)
 async def api_error_handler(request: Request, exc: HTTPException):
+    request_id = getattr(request.state, "request_id", "unavailable")
     detail = exc.detail
     if isinstance(detail, dict):
         code = str(detail.get("code", "REQUEST_FAILED"))
         message = str(detail.get("message", "Request failed."))
     else:
         code, message = "REQUEST_FAILED", str(detail)
-    response = JSONResponse(status_code=exc.status_code, content={"error": {"code": code, "message": message, "request_id": request.state.request_id}}, headers=exc.headers)
-    response.headers["X-Request-ID"] = request.state.request_id
+    response = JSONResponse(status_code=exc.status_code, content={"error": {"code": code, "message": message, "request_id": request_id}}, headers=exc.headers)
+    response.headers["X-Request-ID"] = request_id
     response.headers["Cache-Control"] = "no-store"
     return response
 

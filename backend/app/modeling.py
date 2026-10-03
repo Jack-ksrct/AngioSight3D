@@ -4,7 +4,7 @@ import json
 import joblib
 
 DEFAULT_TARGETS = ["CAD", "LAD", "LCX", "RCA"]
-LEAKAGE_COLUMNS = {"lad", "lcx", "rca", "cath"}
+LEAKAGE_COLUMNS = {"cad", "lad", "lcx", "rca", "cath"}
 
 
 def load_bundle(model_dir: str | Path):

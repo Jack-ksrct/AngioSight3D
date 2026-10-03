@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 
 Write-Host 'CardioMap local setup' -ForegroundColor Cyan
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw 'Python is required. Install Python 3.12 or newer, then rerun the setup script.' }

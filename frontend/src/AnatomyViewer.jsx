@@ -43,11 +43,30 @@ function HeartMesh({ probabilities, onSelect }) {
     });
     return clone;
   }, [source, probabilities.LAD, probabilities.LCX, probabilities.RCA]);
-  return <primitive object={model} onClick={event => {
-    const material = Array.isArray(event.object.material) ? event.object.material[event.face?.materialIndex ?? 0] : event.object.material;
-    const vessel = material?.name?.replace('artery_', '');
-    if (vessels.includes(vessel)) { event.stopPropagation(); onSelect(vessel); }
-  }} />;
+
+  React.useEffect(() => {
+    return () => {
+      document.body.style.cursor = 'auto';
+    };
+  }, []);
+
+  return <primitive
+    object={model}
+    onClick={event => {
+      const material = Array.isArray(event.object.material) ? event.object.material[event.face?.materialIndex ?? 0] : event.object.material;
+      const vessel = material?.name?.replace('artery_', '');
+      if (vessels.includes(vessel)) { event.stopPropagation(); onSelect(vessel); }
+    }}
+    onPointerOver={event => {
+      const material = Array.isArray(event.object.material) ? event.object.material[event.face?.materialIndex ?? 0] : event.object.material;
+      if (material?.name?.startsWith('artery_')) {
+        document.body.style.cursor = 'pointer';
+      }
+    }}
+    onPointerOut={() => {
+      document.body.style.cursor = 'auto';
+    }}
+  />;
 }
 
 function Anatomy({ probabilities, onSelect }) {
@@ -59,5 +78,5 @@ function Anatomy({ probabilities, onSelect }) {
 }
 
 export default function AnatomyViewer({ probabilities, onSelect }) {
-  return <Canvas camera={{position:[0,0,2.75],fov:38}}><React.Suspense fallback={null}><Anatomy probabilities={probabilities} onSelect={onSelect}/></React.Suspense></Canvas>;
+  return <Canvas camera={{position:[0,0,2.75],fov:38}} gl={{ antialias: true, alpha: true }}><React.Suspense fallback={null}><Anatomy probabilities={probabilities} onSelect={onSelect}/></React.Suspense></Canvas>;
 }

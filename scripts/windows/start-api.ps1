@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $pythonExe = Join-Path $root 'backend\.venv\Scripts\python.exe'
 if (-not (Test-Path $pythonExe)) { throw 'Run .\scripts\windows\setup.ps1 first.' }
 $env:MODEL_DIR = Join-Path $root 'models'

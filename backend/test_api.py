@@ -89,11 +89,13 @@ class PredictionMappingTests(unittest.TestCase):
             build_predictions({"Age": 52}, bundle)
 
 
-async def asgi_request(path, method="GET", body=None, extra_headers=()):
+async def asgi_request(path, method="GET", body=None, extra_headers=(), include_content_length=True):
     payload = b"" if body is None else json.dumps(body, allow_nan=True).encode()
     headers = [(b"host", b"testserver"), *extra_headers]
     if body is not None:
-        headers.extend([(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())])
+        headers.append((b"content-type", b"application/json"))
+        if include_content_length:
+            headers.append((b"content-length", str(len(payload)).encode()))
     first_message = True
     sent = []
 
@@ -168,6 +170,22 @@ class ApiIntegrationTests(unittest.TestCase):
         status, _, body = self.request("/predict", "POST", None, ((b"content-length", b"20000"),))
         self.assertEqual(status, 413)
         self.assertEqual(body["error"]["code"], "REQUEST_TOO_LARGE")
+
+    def test_oversized_stream_without_content_length_is_rejected(self):
+        payload = {"features": {}, "padding": "x" * 17000}
+        status, _, body = asyncio.run(asgi_request(
+            "/predict", "POST", payload, include_content_length=False
+        ))
+        self.assertEqual(status, 413)
+        self.assertEqual(body["error"]["code"], "REQUEST_TOO_LARGE")
+
+    def test_negative_or_invalid_content_length_is_rejected(self):
+        status, _, body = self.request("/predict", "POST", None, ((b"content-length", b"-1"),))
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "INVALID_CONTENT_LENGTH")
+        status, _, body = self.request("/predict", "POST", None, ((b"content-length", b"invalid"),))
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "INVALID_CONTENT_LENGTH")
 
     def test_missing_model_returns_service_unavailable(self):
         app.state.model_bundle = None

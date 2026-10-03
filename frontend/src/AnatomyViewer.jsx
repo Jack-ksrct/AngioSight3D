@@ -30,15 +30,18 @@ function HeartMesh({ probabilities, onSelect }) {
       object.castShadow = true;
       object.receiveShadow = true;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
-      object.material = materials.map(material => new THREE.MeshStandardMaterial({
-        name: material.name,
-        color: material.name?.startsWith('artery_') ? color(probabilities[material.name.replace('artery_', '')])
-          : material.name === 'coronary_vein' || coronaryVeins.has(object.name) ? '#4e91b8'
-            : '#bd7774',
-        roughness: material.name?.startsWith('artery_') || material.name === 'coronary_vein' || coronaryVeins.has(object.name) ? .48 : .68,
-        metalness: 0,
-        side: THREE.DoubleSide,
-      }));
+      object.material = materials.map(material => {
+        const isArtery = material.name?.startsWith('artery_');
+        const isVein = material.name === 'coronary_vein' || coronaryVeins.has(object.name);
+        if (isArtery) {
+          return new THREE.MeshPhysicalMaterial({ name: material.name, color: '#2f5d7c', roughness: .32, clearcoat: .7, clearcoatRoughness: .45, metalness: 0, side: THREE.DoubleSide });
+        }
+        if (isVein) {
+          return new THREE.MeshPhysicalMaterial({ name: material.name, color: '#4e91b8', roughness: .34, clearcoat: .65, clearcoatRoughness: .5, metalness: 0, side: THREE.DoubleSide });
+        }
+        // Myocardium: deeper red with a subtle tissue sheen for a less flat look.
+        return new THREE.MeshPhysicalMaterial({ name: material.name, color: '#a8443c', roughness: .52, clearcoat: .5, clearcoatRoughness: .6, metalness: 0, side: THREE.DoubleSide });
+      });
       if (object.material.length === 1) object.material = object.material[0];
     });
     return clone;
@@ -71,7 +74,7 @@ function HeartMesh({ probabilities, onSelect }) {
 
 function Anatomy({ probabilities, onSelect }) {
   return <>
-    <ambientLight intensity={1.55}/><directionalLight position={[2.5,3.5,4]} intensity={2.1}/><pointLight position={[-3,-1,2]} intensity={.65} color="#e7867b"/>
+    <ambientLight intensity={1.55}/><directionalLight position={[2.5,3.5,4]} intensity={2.1}/><pointLight position={[-3,-1,2]} intensity={.65} color="#e7867b"/><hemisphereLight args={['#ffe6e0', '#5a2b2b', 0.9]}/><pointLight position={[-2.5,1.8,-2.2]} intensity={.8} color="#ffb3a7"/>
     <HeartMesh probabilities={probabilities} onSelect={onSelect}/>
     <OrbitControls enablePan={false} minDistance={1.55} maxDistance={5.5}/>
   </>;

@@ -135,8 +135,9 @@ useGLTF.preload(MODEL_URLS.Female);
 
 export default function BodyFigure({ sex }) {
   const label = sex === 'Male' ? 'Male reference figure' : sex === 'Female' ? 'Female reference figure' : 'Neutral reference figure';
+  const title = sex === 'Male' ? 'Male body' : sex === 'Female' ? 'Female body' : 'Body map';
   return <div className="body-reference" role="group" aria-label={`${label}; pulsing marker indicates approximate heart position; drag to rotate`}>
-    <span className="body-reference-title">BODY MAP</span>
+    <span className="body-reference-title">{title}</span>
     <Canvas camera={{ position: [0, 0, 3], zoom: 2.35 }} gl={{ alpha: true, antialias: true }}>
       <ambientLight intensity={2.1}/>
       <directionalLight position={[1.5, 2.3, 3]} intensity={2.2}/>

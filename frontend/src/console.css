@@ -135,10 +135,10 @@ body::before {
 .viz-panel .panel-head { margin-bottom: 11px; }
 .drag-hint { display: flex; align-items: center; gap: 6px; color: #6f8698; font-size: 7px; letter-spacing: .08em; white-space: nowrap; }
 .drag-hint i { width: 2px; height: 2px; border-radius: 50%; background: var(--mint); }
-.viewer { position: relative; min-height: 0; flex: 1; overflow: hidden; isolation: isolate; background: radial-gradient(ellipse at 50% 47%, #1b303e 0, #101c27 48%, #0a131c 100%); border: 1px solid rgba(123, 168, 190, .13); border-radius: 10px; }
+.viewer { position: relative; min-height: 0; flex: 1; overflow: hidden; isolation: isolate; --body-map-w: 132px; --body-map-gap: 26px; background: radial-gradient(ellipse at 50% 47%, #1b303e 0, #101c27 48%, #0a131c 100%); border: 1px solid rgba(123, 168, 190, .13); border-radius: 10px; }
 .viewer::before { position: absolute; z-index: 0; inset: 0; background: linear-gradient(rgba(143, 192, 204, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(143, 192, 204, .035) 1px, transparent 1px); background-size: 32px 32px; mask-image: radial-gradient(ellipse at center, #000 0, transparent 80%); content: ''; pointer-events: none; }
 .viewer canvas { position: relative; z-index: 1; width: 100%; height: 100%; touch-action: none; }
-.viewer-label { position: absolute; z-index: 2; top: 11px; right: 13px; left: 13px; display: flex; justify-content: space-between; color: #8195a5; font-size: 7px; letter-spacing: .12em; pointer-events: none; }
+.viewer-label { position: absolute; z-index: 2; top: 11px; right: calc(var(--body-map-w) + var(--body-map-gap) - 13px); left: 13px; display: flex; justify-content: space-between; color: #8195a5; font-size: 7px; letter-spacing: .12em; pointer-events: none; }
 .viewer-label i { color: var(--mint); font-style: normal; }
 .viewer-corner { position: absolute; z-index: 2; width: 12px; height: 12px; border-color: rgba(97, 225, 197, .65); border-style: solid; pointer-events: none; }
 .viewer-corner-tl { top: 6px; left: 6px; border-width: 1px 0 0 1px; }
@@ -226,7 +226,7 @@ footer i { display: inline-block; width: 3px; height: 3px; margin: 0 5px 2px; bo
   .dashboard { grid-template-columns: minmax(275px, .82fr) minmax(360px, 1.18fr); }
   .input-panel, .viz-panel { height: 570px; }
   .results-panel { height: auto; min-height: 0; grid-column: 1/-1; }
-  .results-panel .cad-card { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(250px, 1.2fr); column-gap: 18px; align-items: center; }
+  .results-panel .cad-card { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); column-gap: 16px; align-items: center; }
   .results-panel .cad-card-head { grid-column: 1/-1; }
   .results-panel .cad-score { margin: 8px 0; }
   .results-panel .score-scale { margin: 8px 0; }
@@ -394,6 +394,8 @@ body::before { display: none; }
 .drag-hint i { background: #a7b4ae; }
 .viewer { background: radial-gradient(ellipse at 50% 48%, #e9efeb 0, #e1e8e3 55%, #dce5df 100%); border: 1px solid #d5e0d8; border-radius: 8px; }
 .viewer-canvas-shell { position: absolute; z-index: 1; inset: 0; }
+/* Reserve the body-map column so the overlay never sits on top of the heart. */
+.viewer-canvas-shell { padding-right: calc(var(--body-map-w) + var(--body-map-gap)); }
 .viewer-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #61766d; font-size: 13px; }
 .viewer::before { background-image: linear-gradient(rgba(67, 106, 91, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(67, 106, 91, .045) 1px, transparent 1px); }
 .viewer-label { color: #61766d; font: 10px 'DM Sans', sans-serif; letter-spacing: 0; }
@@ -663,9 +665,11 @@ html[data-theme="dark"] .body-reference-title, html[data-theme="dark"] .body-ref
 html[data-theme="dark"] .field-hint { color: #91b9c7; }
 @media (max-width: 680px) {
   .body-reference { top: 47px; right: 9px; width: 98px; height: 190px; grid-template-rows: 14px minmax(0, 1fr) 14px 11px; }
+  .viewer { --body-map-w: 98px; --body-map-gap: 18px; }
 }
 @media (max-width: 420px) {
   .body-reference { right: 6px; width: 78px; height: 158px; grid-template-rows: 13px minmax(0, 1fr) 13px 10px; }
+  .viewer { --body-map-w: 78px; --body-map-gap: 12px; }
   .body-reference-title, .body-reference-key { font-size: 7px; }
   .body-reference-note { font-size: 6px; }
 }
@@ -719,7 +723,7 @@ html[data-theme="dark"] .field-hint { color: #91b9c7; }
 @media (min-width: 901px) {
   .results-panel {
     display: grid;
-    grid-template-columns: minmax(290px, .8fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(320px, 1fr) minmax(0, 1.05fr);
     grid-template-areas:
       "heading heading"
       "score vessel-heading"
@@ -733,4 +737,12 @@ html[data-theme="dark"] .field-hint { color: #91b9c7; }
   .results-panel > .vessel-section-head { grid-area: vessel-heading; align-self: center; }
   .results-panel > .vessel-list { grid-area: vessels; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .results-panel > .insight { grid-area: insight; }
+}
+/* Below 1121px the dashboard drops to two columns and the results row spans the full
+   width, so the score card gets a full column of its own instead of splitting further. */
+@media (min-width: 901px) and (max-width: 1120px) {
+  .results-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .results-panel .cad-card { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
+  .results-panel .cad-score { margin: 8px 0 6px; }
+  .results-panel .score-scale { margin: 0 0 9px; }
 }

@@ -2,7 +2,7 @@
   <img src="logo.jpeg" alt="CardioMap" width="104">
 </p>
 
-<h1 align="center">CardioMap</h1>
+<h1 align="center">AngioSight</h1>
 <p align="center"><strong>Dataset-derived CAD and LAD&nbsp;/&nbsp;LCX&nbsp;/&nbsp;RCA estimates, drawn onto a real anatomical heart.</strong></p>
 <p align="center">A research prototype: type in a cardiovascular profile, get a calibrated-looking score — then see which coronary territories the model is talking about, on 89 officially named structures from BodyParts3D.</p>
 

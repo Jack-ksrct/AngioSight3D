@@ -147,6 +147,12 @@ body::before {
 .legend span { display: flex; align-items: center; gap: 5px; }
 .legend span>i { width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 7px currentColor; }
 .legend .mesh-state { margin-left: auto; color: #95c4b8; }
+.legend-head { color: #61798b; letter-spacing: .12em; text-transform: uppercase; }
+.legend+.legend { margin-top: 6px; }
+.structure-readout { display: flex; align-items: baseline; gap: 7px; min-height: 16px; margin: 8px 0 0; color: #8497a8; font: 8px 'DM Mono', monospace; letter-spacing: .02em; }
+.structure-readout>i { width: 7px; height: 7px; align-self: center; flex: none; border-radius: 50%; box-shadow: 0 0 7px currentColor; }
+.structure-readout>b { color: #c6d6e1; font: 600 9px 'DM Sans', sans-serif; letter-spacing: 0; }
+.structure-readout>span { color: #6d8394; }
 .mesh-state .status-dot { width: 5px; height: 5px; }
 .attribution { margin: 8px 0 0; color: #6f8495; font-size: 7px; line-height: 1.45; }
 .attribution a { color: #88ccb9; text-decoration: none; }
@@ -403,6 +409,10 @@ body::before { display: none; }
 .viewer-corner { border-color: rgba(73, 124, 103, .58); }
 .legend { gap: 9px 15px; color: #62756e; font: 10px 'DM Sans', sans-serif; letter-spacing: 0; }
 .legend .mesh-state { display: none; }
+.legend-head { color: #9aa8a0; }
+.structure-readout { color: #62756e; font: 10px 'DM Sans', sans-serif; letter-spacing: 0; }
+.structure-readout>b { color: #2f443b; font-size: 12px; }
+.structure-readout>span { color: #87948d; }
 .attribution { color: #72827b; font: 10px 'DM Sans', sans-serif; line-height: 1.5; }
 .attribution a { color: #367668; }
 .results-panel { display: grid; height: auto; min-height: 0; grid-column: 1/-1; grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr); gap: 0 22px; }
@@ -656,6 +666,7 @@ html[data-theme="dark"] :where(a, button, input, select):focus-visible { outline
 }
 .body-reference canvas { width: 100% !important; height: 100% !important; pointer-events: auto; touch-action: none; cursor: grab; }
 .body-reference canvas:active { cursor: grabbing; }
+.body-reference-loading { grid-template-rows: minmax(0, 1fr); font: 9px 'DM Mono', monospace; color: #91b6c2; }
 .body-reference-key { display: flex; align-items: center; gap: 5px; font-size: 8px; white-space: nowrap; }
 .body-reference-key i { width: 6px; height: 6px; border-radius: 50%; background: #ff6f79; box-shadow: 0 0 8px #ff6f79; }
 .body-reference-note { font-size: 7px; letter-spacing: .1em; opacity: .78; }

@@ -6,6 +6,7 @@ backend/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+scripts/.bp3d-cache/
 frontend/node_modules/
 frontend/dist/
 frontend/.env

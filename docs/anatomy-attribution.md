@@ -16,4 +16,17 @@ To regenerate, download `partof_BP3D_4.0_obj_99.zip` and `partof_element_parts.t
 python scripts/build_bodyparts3d_heart.py --archive path/to/partof_BP3D_4.0_obj_99.zip --element-parts path/to/partof_element_parts.txt
 ```
 
+## Region names
+
+The `.obj` carries no anatomical names, so `frontend/src/anatomyLabels.js` maps each BodyParts3D region id to the official English concept name and an anatomy group. Both come from the same 4.0 release archive, resolved by `scripts/build_anatomy_labels.py`:
+
+- `isa_element_parts.txt` — concept id, name, element file id
+- `isa_inclusion_relation_list.txt` — the IS-A class hierarchy
+
+For each region the script takes the deepest concept that contains it in the IS-A hierarchy, which yields one name per region for all 89 regions in the asset with no ties. `scripts/build_bodyparts3d_heart.py` selects those regions by FMA concept id, so the resolved names and the `.mtl` material groups agree region for region. The coronary veins and the great vessels have no material of their own in the shipped `.mtl`, so their group is what gives them a colour; coronary arteries keep the material-driven colour, which is where the model estimate is shown.
+
+```sh
+python scripts/build_anatomy_labels.py
+```
+
 The LAD, LCX, and RCA colors reflect patient-level model outputs, not lesion localization. The source dataset has no lesion coordinates, and these meshes are educational anatomical references rather than patient-specific anatomy or clinical imaging.

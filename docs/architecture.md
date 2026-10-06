@@ -1,8 +1,8 @@
-# CardioMap architecture and operating model
+# AngioSight architecture and operating model
 
 ## Product scope
 
-CardioMap is a local-first educational and research application. It accepts one user-entered clinical feature vector, estimates four binary model outcomes (CAD, LAD, LCX, and RCA), and displays those estimates beside a BodyParts3D anatomical reference. It does not create accounts, retain assessments, identify patients, localize lesions, provide clinical advice, or support care decisions.
+AngioSight is a local-first educational and research application. It accepts one user-entered clinical feature vector, estimates four binary model outcomes (CAD, LAD, LCX, and RCA), and displays those estimates beside a BodyParts3D anatomical reference. It does not create accounts, retain assessments, identify patients, localize lesions, provide clinical advice, or support care decisions.
 
 The supplied dataset is small and is not evidence of clinical validity. The project must remain labeled research-only. Public clinical deployment is out of scope until independent clinical, privacy, security, and regulatory review is completed.
 

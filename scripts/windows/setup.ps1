@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 
-Write-Host 'CardioMap local setup' -ForegroundColor Cyan
+Write-Host 'AngioSight local setup' -ForegroundColor Cyan
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw 'Python is required. Install Python 3.12 or newer, then rerun the setup script.' }
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { throw 'pnpm 11.19.0 is required. Install Node.js 22+ and run npm install --global pnpm@11.19.0.' }
 python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)"

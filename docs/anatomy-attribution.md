@@ -1,6 +1,6 @@
 # Anatomical 3D asset attribution
 
-CardioMap includes an adapted assembly of 87 BodyParts3D 4.0 OBJ elements, combined into `frontend/public/models/bodyparts3d-heart.obj` and `bodyparts3d-heart.mtl`. The selection includes heart structures, the ascending aorta and aortic arch, the superior vena cava, the pulmonary trunk, and named coronary branches. Long inferior vena cava segments are omitted so the initial view stays focused on the heart.
+AngioSight includes an adapted assembly of 87 BodyParts3D 4.0 OBJ elements, combined into `frontend/public/models/bodyparts3d-heart.obj` and `bodyparts3d-heart.mtl`. The selection includes heart structures, the ascending aorta and aortic arch, the superior vena cava, the pulmonary trunk, and named coronary branches. Long inferior vena cava segments are omitted so the initial view stays focused on the heart.
 
 - **Source:** [BodyParts3D database archive](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/download.html)
 - **Source files:** `partof_BP3D_4.0_obj_99.zip` and `partof_element_parts.txt`, release 4.0

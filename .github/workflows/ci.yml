@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cardiomap-${{ github.workflow }}-${{ github.ref }}
+  group: angiosight-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

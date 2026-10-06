@@ -20,7 +20,7 @@ MODEL_DIR = Path(os.getenv("MODEL_DIR", ROOT / "models"))
 ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
 ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", "false").casefold() in {"1", "true", "yes"}
 MAX_BODY_BYTES = 16 * 1024
-logger = logging.getLogger("cardiomap.api")
+logger = logging.getLogger("angiosight.api")
 
 
 @asynccontextmanager
@@ -51,7 +51,7 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(
-    title="CardioMap API",
+    title="AngioSight API",
     version="1.0.0",
     description="Research-only cardiovascular risk estimates. Not for clinical use.",
     docs_url="/docs" if ENABLE_API_DOCS else None,

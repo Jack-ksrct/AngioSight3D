@@ -26,7 +26,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSplash, setShowSplash] = useState(true);
   const [theme, setTheme] = useState(() => {
-    try { const saved = localStorage.getItem('cardiomap-theme'); return ['system', 'light', 'dark'].includes(saved) ? saved : 'system'; }
+    try { const saved = localStorage.getItem('angiosight-theme'); return ['system', 'light', 'dark'].includes(saved) ? saved : 'system'; }
     catch { return 'system'; }
   });
   useEffect(() => {
@@ -40,7 +40,7 @@ export default function App() {
     if (theme === 'system') preference.addEventListener('change', applyTheme);
     return () => preference.removeEventListener('change', applyTheme);
   }, [theme]);
-  useEffect(() => { try { localStorage.setItem('cardiomap-theme', theme); } catch { /* Theme preference is optional. */ } }, [theme]);
+  useEffect(() => { try { localStorage.setItem('angiosight-theme', theme); } catch { /* Theme preference is optional. */ } }, [theme]);
   useEffect(() => {
     const prefersReducedMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const timer = window.setTimeout(() => setShowSplash(false), prefersReducedMotion ? 50 : 1550);
@@ -67,7 +67,7 @@ export default function App() {
       .catch(error => {
         if (error.name !== 'AbortError') {
           setMetrics({ trained: false });
-          setStatus('Cannot reach the CardioMap API. Start the API service, then reload this page.');
+          setStatus('Cannot reach the AngioSight API. Start the API service, then reload this page.');
         }
       });
     return () => controller.abort();

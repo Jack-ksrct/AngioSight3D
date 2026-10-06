@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="logo.jpeg" alt="CardioMap" width="104">
+  <img src="logo.jpeg" alt="AngioSight" width="104">
 </p>
 
 <h1 align="center">AngioSight</h1>
 <p align="center"><strong>Dataset-derived CAD and LAD&nbsp;/&nbsp;LCX&nbsp;/&nbsp;RCA estimates, drawn onto a real anatomical heart.</strong></p>
 <p align="center">A research prototype: type in a cardiovascular profile, get a calibrated-looking score — then see which coronary territories the model is talking about, on 89 officially named structures from BodyParts3D.</p>
 
-![CardioMap showing a completed assessment beside the interactive heart](docs/images/app-overview.png)
+![AngioSight showing a completed assessment beside the interactive heart](docs/images/app-overview.png)
 
 > ### ⚠️ Research and education only
-> **CardioMap is not a medical device.** It must not be used for diagnosis, treatment, triage, or any emergency decision, and its output does not replace clinician assessment or diagnostic imaging. The scores come from a 303-record research dataset. Never enter identifiable patient data.
+> **AngioSight is not a medical device.** It must not be used for diagnosis, treatment, triage, or any emergency decision, and its output does not replace clinician assessment or diagnostic imaging. The scores come from a 303-record research dataset. Never enter identifiable patient data.
 
 ---
 

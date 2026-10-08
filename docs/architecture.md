@@ -77,12 +77,12 @@ The browser uses same-origin `/api` paths; Vite and Nginx proxy them to FastAPI.
 | Method and path | Purpose | Data handling |
 | --- | --- | --- |
 | `GET /health` | Liveness/readiness status and whether a trusted model loaded. | No assessment data. |
-| `GET /metadata` | Feature schema and dataset-level evaluation summaries. | No assessment data. |
-| `POST /predict` | Estimate CAD, LAD, LCX, and RCA outputs for one feature map. | Processed in memory; not persisted. Body limit is 16 KB. |
+| `GET /metadata` | Feature schema, dataset-level evaluation summaries, and the angiography branch metrics (when loaded). | No assessment data. |
+| `POST /predict` | Estimate CAD, LAD, LCX, and RCA outputs for one feature map, with an optional angiography frame. | Processed in memory. If an image is sent it is decoded, scored, and discarded — never persisted or logged. Body limit is 6 MB. |
 
-`POST /predict` accepts `{"features": {"Age": 52, "Sex": "Female"}}`. Omitted expected fields are treated as blank; unexpected feature keys are rejected. Numeric inputs must be finite JSON numbers. Categorical inputs must be strings. Booleans, arrays, objects, and oversized text values are rejected.
+`POST /predict` accepts `{"features": {"Age": 52, "Sex": "Female"}}`, optionally with `"image": "<base64 PNG/JPEG>"` (or a `data:` URL). Omitted expected fields are treated as blank; unexpected feature keys are rejected. Numeric inputs must be finite JSON numbers. Categorical inputs must be strings. Booleans, arrays, objects, and oversized text values are rejected. Images must be PNG or JPEG and at most 5 MB decoded (6 MB request ceiling).
 
-Successful responses use `{"predictions": {"CAD": {"probability": 0.0, "prediction": "...", "positive_class": "..."}}, "disclaimer": "..."}`. Errors use `{"error": {"code": "...", "message": "...", "request_id": "..."}}`. The request ID is safe to include in a support report; never include patient values in a report.
+Successful responses use `{"predictions": {"CAD": {"probability": 0.0, "prediction": "...", "positive_class": "..."}}, "disclaimer": "..."}`. When an image is supplied the response also carries `imaging` (lesion probability, window count) and `fusion` (weights, frame AUC, basis), and `predictions.CAD.components` holds the separate tabular and imaging probabilities. Errors use `{"error": {"code": "...", "message": "...", "request_id": "..."}}`. The request ID is safe to include in a support report; never include patient values in a report.
 
 OpenAPI docs are disabled by default. Set `ENABLE_API_DOCS=true` only in a trusted development environment.
 
@@ -90,12 +90,12 @@ OpenAPI docs are disabled by default. Set `ENABLE_API_DOCS=true` only in a trust
 
 - The default API CORS origin is `http://localhost:5173`; configure an exact origin list only when needed. Credentialed CORS is disabled.
 - The frontend sends no cookies or tokens. The API does not authenticate users; loopback development and the Compose private network are the supported trust boundaries.
-- The API uses strict scalar request fields, a 16 KB body ceiling, numeric finiteness/type checks, an allowlist derived from the loaded feature schema, generic server errors, request IDs, and no-store/security response headers.
-- Nginx limits request size and inference frequency, sets browser security headers, and does not publish the API container port to the host.
+- The API uses strict scalar request fields, a 6 MB body ceiling, numeric finiteness/type checks, PNG/JPEG magic-byte and size checks on any uploaded frame, an allowlist derived from the loaded feature schema, generic server errors, request IDs, and no-store/security response headers.
+- Nginx limits request size (6 MB, to match the API ceiling) and inference frequency, sets browser security headers, and does not publish the API container port to the host.
 - The Compose model mount is read-only. Only model artifacts created by a trusted local training run may be loaded.
 - No assessment values are included in application logs. Do not enter identifiable health data. Local access logs should be handled as operational data and retained only as needed.
 - Local network hosting is for a trusted Wi-Fi network. It is not HTTPS and is not a safe public deployment configuration.
-- Images are static assets; the app has no upload endpoint, user file storage, payments, email, OAuth, WebSocket, or push-notification path.
+- Images are static assets except for the optional angiography frame, which travels inside the `/predict` request, is scored in memory, and is never written to disk. The app has no user file storage, no image database, no payments, email, OAuth, WebSocket, or push-notification path.
 
 This is not a production security certification. A public or clinical service would require a separate threat model, identity and authorization, TLS, managed secrets, infrastructure rate limiting, vulnerability and dependency review, monitoring/incident response, formal privacy review, and applicable clinical/regulatory approval.
 

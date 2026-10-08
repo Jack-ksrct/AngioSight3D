@@ -1,12 +1,19 @@
 """Offline tests for API input boundaries and model response mapping."""
+import base64
+import io
 import math
 import asyncio
 import json
 import unittest
 
+import numpy as np
+from PIL import Image
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 from pydantic import ValidationError
 
-from backend.app.main import PredictionRequest, app, build_predictions, validate_feature_values
+from backend.app.imaging import window_features
+from backend.app.main import MAX_BODY_BYTES, PredictionRequest, app, build_predictions, fuse_cad_probability, imaging_skill_weight, validate_feature_values
 
 
 class FixedPipeline:
@@ -167,12 +174,12 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "INVALID_FEATURES")
 
     def test_oversized_request_is_rejected_before_json_parsing(self):
-        status, _, body = self.request("/predict", "POST", None, ((b"content-length", b"20000"),))
+        status, _, body = self.request("/predict", "POST", None, ((b"content-length", str(MAX_BODY_BYTES + 1).encode()),))
         self.assertEqual(status, 413)
         self.assertEqual(body["error"]["code"], "REQUEST_TOO_LARGE")
 
     def test_oversized_stream_without_content_length_is_rejected(self):
-        payload = {"features": {}, "padding": "x" * 17000}
+        payload = {"features": {}, "padding": "x" * (MAX_BODY_BYTES + 1024)}
         status, _, body = asyncio.run(asgi_request(
             "/predict", "POST", payload, include_content_length=False
         ))
@@ -192,6 +199,116 @@ class ApiIntegrationTests(unittest.TestCase):
         status, _, body = self.request("/predict", "POST", {"features": {"Age": 52}})
         self.assertEqual(status, 503)
         self.assertEqual(body["error"]["code"], "MODEL_UNAVAILABLE")
+
+
+class ImageRequestTests(unittest.TestCase):
+    @staticmethod
+    def _png(size=24):
+        buffer = io.BytesIO()
+        Image.fromarray((np.random.RandomState(0).rand(size, size) * 255).astype(np.uint8)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def test_valid_png_is_accepted(self):
+        request = PredictionRequest(features={}, image=base64.b64encode(self._png()).decode())
+        self.assertTrue(request.image)
+
+    def test_data_url_prefix_is_stripped(self):
+        payload = "data:image/png;base64," + base64.b64encode(self._png()).decode()
+        self.assertNotIn(",", PredictionRequest(features={}, image=payload).image)
+
+    def test_invalid_base64_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            PredictionRequest(features={}, image="not base64!!")
+
+    def test_non_image_payload_is_rejected(self):
+        payload = base64.b64encode(b"plain text, not an image").decode()
+        with self.assertRaises(ValidationError):
+            PredictionRequest(features={}, image=payload)
+
+
+class FusionTests(unittest.TestCase):
+    def test_skill_weight_rises_with_auc(self):
+        self.assertEqual(imaging_skill_weight(None), 0.0)
+        self.assertEqual(imaging_skill_weight(0.5), 0.0)
+        self.assertAlmostEqual(imaging_skill_weight(0.75), 0.5)
+        self.assertAlmostEqual(imaging_skill_weight(0.9), 0.5)
+
+    def test_fusion_blends_by_weight(self):
+        fused, config = fuse_cad_probability(0.6, 0.4, 0.5)
+        self.assertAlmostEqual(fused, 0.5)
+        self.assertTrue(config["applied"])
+        self.assertEqual(config["imaging_weight"], 0.5)
+
+    def test_zero_weight_does_not_move_probability(self):
+        fused, config = fuse_cad_probability(0.6, 0.1, 0.0)
+        self.assertAlmostEqual(fused, 0.6)
+        self.assertFalse(config["applied"])
+
+
+def tiny_imaging_bundle():
+    rng = np.random.RandomState(11)
+    features = window_features(rng.rand(192, 192).astype(np.float32))
+    labels = np.array([0, 1, 0, 1, 0, 1, 0, 1, 1])[: len(features)]
+    scaler = StandardScaler(with_mean=False).fit(features)
+    classifier = LogisticRegression(max_iter=5000, random_state=11).fit(scaler.transform(features), labels)
+    return {"scaler": scaler, "classifier": classifier, "config": {"patch": 96, "stride": 48, "max_side": 1024}, "classes": ["non-lesion", "lesion"]}
+
+
+def tiny_png(size=128):
+    buffer = io.BytesIO()
+    Image.fromarray((np.random.RandomState(5).rand(size, size) * 255).astype(np.uint8)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+class ImagingIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        pipeline = FixedPipeline(probability=0.6, prediction=1)
+        app.state.model_bundle = {"features": ["Age", "Sex"], "models": {"CAD": pipeline, "LAD": pipeline, "LCX": pipeline, "RCA": pipeline}, "classes": {"CAD": ["No", "Yes"], "LAD": ["No", "Yes"], "LCX": ["No", "Yes"], "RCA": ["No", "Yes"]}}
+        app.state.model_metadata = {"trained": True, "feature_schema": {"Age": {"type": "number"}, "Sex": {"type": "category", "options": ["Female", "Male"]}}}
+        app.state.model_load_error = None
+        app.state.imaging_bundle = tiny_imaging_bundle()
+        app.state.imaging_metadata = {"trained": True, "frame_level": {"n": 9, "roc_auc": 0.9}, "patient_level_vessels_affected": {"n": 4}}
+
+    def request(self, path, method="GET", body=None, extra_headers=()):
+        return asyncio.run(asgi_request(path, method, body, extra_headers))
+
+    def test_predict_with_image_returns_fusion(self):
+        body = {"features": {"Age": 60}, "image": base64.b64encode(tiny_png()).decode()}
+        status, _, response = self.request("/predict", "POST", body)
+        self.assertEqual(status, 200)
+        self.assertTrue(response["fusion"]["applied"])
+        self.assertIsNotNone(response["imaging"]["lesion_probability"])
+        cad = response["predictions"]["CAD"]
+        self.assertIn("components", cad)
+        self.assertAlmostEqual(cad["components"]["tabular"], 0.6)
+        self.assertAlmostEqual(cad["probability"], 0.5 * 0.6 + 0.5 * cad["components"]["imaging"])
+
+    def test_predict_without_image_does_not_fuse(self):
+        status, _, response = self.request("/predict", "POST", {"features": {"Age": 60}})
+        self.assertEqual(status, 200)
+        self.assertFalse(response["fusion"]["applied"])
+        self.assertFalse(response["imaging"]["applied"])
+
+    def test_image_with_unloaded_branch_is_unavailable(self):
+        app.state.imaging_bundle = None
+        body = {"features": {"Age": 60}, "image": base64.b64encode(tiny_png()).decode()}
+        status, _, response = self.request("/predict", "POST", body)
+        self.assertEqual(status, 503)
+        self.assertEqual(response["error"]["code"], "IMAGING_UNAVAILABLE")
+
+    def test_metadata_reports_imaging(self):
+        status, _, response = self.request("/metadata")
+        self.assertEqual(status, 200)
+        self.assertTrue(response["imaging"]["trained"])
+
+    def test_low_skill_image_is_not_fused(self):
+        app.state.imaging_metadata = {"trained": True, "frame_level": {"n": 9, "roc_auc": 0.5}}
+        body = {"features": {"Age": 60}, "image": base64.b64encode(tiny_png()).decode()}
+        status, _, response = self.request("/predict", "POST", body)
+        self.assertEqual(status, 200)
+        self.assertFalse(response["fusion"]["applied"])
+        self.assertEqual(response["predictions"]["CAD"]["probability"], 0.6)
+        self.assertIsNotNone(response["imaging"]["lesion_probability"])
 
 
 if __name__ == "__main__":

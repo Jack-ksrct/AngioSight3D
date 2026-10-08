@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+import base64
 import logging
 import math
 import os
@@ -13,13 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, field_validator
+from . import imaging
 from .modeling import load_bundle, metadata as load_metadata
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = Path(os.getenv("MODEL_DIR", ROOT / "models"))
 ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
 ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", "false").casefold() in {"1", "true", "yes"}
-MAX_BODY_BYTES = 16 * 1024
+MAX_BODY_BYTES = 6 * 1024 * 1024
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 logger = logging.getLogger("angiosight.api")
 
 
@@ -42,11 +45,19 @@ async def lifespan(application: FastAPI):
         application.state.model_bundle = bundle
         application.state.model_metadata = artifact_metadata or {"trained": False}
         application.state.model_load_error = None
+        imaging_bundle = imaging.load_imaging_bundle(MODEL_DIR)
+        imaging_metadata = imaging.metadata(MODEL_DIR)
+        if imaging_bundle is not None and (not imaging_metadata or not imaging_metadata.get("trained")):
+            raise ValueError("Angiography model metadata is missing or marked untrained.")
+        application.state.imaging_bundle = imaging_bundle
+        application.state.imaging_metadata = imaging_metadata or {"trained": False}
     except Exception:
         logger.exception("Model artifacts could not be loaded")
         application.state.model_bundle = None
         application.state.model_metadata = {"trained": False}
         application.state.model_load_error = "Model artifacts could not be loaded. Check the trusted model files and restart the API."
+        application.state.imaging_bundle = None
+        application.state.imaging_metadata = {"trained": False}
     yield
 
 
@@ -68,6 +79,7 @@ Scalar = StrictStr | StrictInt | StrictFloat | None
 class PredictionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     features: dict[StrictStr, Scalar] = Field(..., max_length=128, description="Clinical inputs matching the trained model's feature schema")
+    image: str | None = Field(default=None, max_length=8 * 1024 * 1024, description="Optional base64 (or data URL) PNG/JPEG angiography frame for the imaging branch")
 
     @field_validator("features")
     @classmethod
@@ -77,6 +89,28 @@ class PredictionRequest(BaseModel):
         if any(isinstance(value, str) and len(value) > 256 for value in features.values()):
             raise ValueError("Text feature values cannot exceed 256 characters.")
         return features
+
+    @field_validator("image")
+    @classmethod
+    def bound_image_payload(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value.startswith("data:"):
+            comma = value.find(",")
+            if comma == -1:
+                raise ValueError("Image payload is not a valid data URL.")
+            value = value[comma + 1:]
+        try:
+            payload = base64.b64decode(value, validate=True)
+        except Exception as exc:
+            raise ValueError("Image payload must be base64-encoded.") from exc
+        if not payload:
+            raise ValueError("Image payload is empty.")
+        if len(payload) > MAX_IMAGE_BYTES:
+            raise ValueError("Image payload exceeds the 5 MB decoded limit.")
+        if not (payload.startswith(b"\x89PNG") or payload.startswith(b"\xff\xd8")):
+            raise ValueError("Only PNG and JPEG images are accepted.")
+        return value
 
 
 def validate_feature_values(features: dict[str, Any], schema: dict[str, Any]) -> None:
@@ -124,6 +158,54 @@ def build_predictions(features: dict[str, Any], bundle: dict[str, Any]) -> dict[
     return results
 
 
+def decode_image(payload: str) -> bytes:
+    """Strip a data URL prefix if present and return the raw image bytes."""
+    if payload.startswith("data:"):
+        payload = payload.split(",", 1)[1]
+    return base64.b64decode(payload, validate=True)
+
+
+def imaging_skill_weight(frame_auc: float | None) -> float:
+    """Weight the imaging branch by how far its frame-level AUC beats chance.
+
+    A branch that cannot discriminate frames (AUC <= 0.5) contributes nothing;
+    a strong branch (AUC >= 0.75) is allowed up to half the fused estimate. This
+    keeps the fusion honest: a near-chance model cannot move the clinical score.
+    """
+    if frame_auc is None or not isinstance(frame_auc, (int, float)) or not math.isfinite(float(frame_auc)):
+        return 0.0
+    return float(max(0.0, min(0.5, 2.0 * (float(frame_auc) - 0.5))))
+
+
+def fuse_cad_probability(tabular: float, imaging_lesion: float, imaging_weight: float) -> tuple[float, dict[str, Any]]:
+    weight = float(max(0.0, min(1.0, imaging_weight)))
+    magnitude = max(0.0, min(1.0, tabular))
+    imaging_value = max(0.0, min(1.0, imaging_lesion))
+    fused = weight * imaging_value + (1.0 - weight) * magnitude
+    return float(fused), {
+        "method": "weighted average of the tabular CAD probability and the imaging lesion probability",
+        "tabular_weight": float(1.0 - weight),
+        "imaging_weight": weight,
+        "applied": weight > 0.0,
+    }
+
+
+def imaging_summary(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not metadata or not metadata.get("trained"):
+        return None
+    frame = metadata.get("frame_level", {})
+    patient = metadata.get("patient_level_vessels_affected", {})
+    return {
+        "trained": True,
+        "source": metadata.get("source"),
+        "evaluation": metadata.get("evaluation"),
+        "folds": metadata.get("folds"),
+        "frame_level": {"n": frame.get("n"), "roc_auc": frame.get("roc_auc"), "accuracy": frame.get("accuracy"), "balanced_accuracy": frame.get("balanced_accuracy")},
+        "patient_level_vessels_affected": {"n": patient.get("n"), "roc_auc": patient.get("max", {}).get("roc_auc"), "accuracy": patient.get("max", {}).get("accuracy_0.5")},
+        "fusion": metadata.get("fusion"),
+    }
+
+
 @app.middleware("http")
 async def request_safety_headers(request: Request, call_next):
     request_id = uuid.uuid4().hex
@@ -140,7 +222,7 @@ async def request_safety_headers(request: Request, call_next):
                     add_security_headers(response, request.url.path)
                     return response
                 if cl > MAX_BODY_BYTES:
-                    response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the 16 KB limit.", "request_id": request_id}})
+                    response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the API size limit.", "request_id": request_id}})
                     response.headers["X-Request-ID"] = request_id
                     add_security_headers(response, request.url.path)
                     return response
@@ -154,7 +236,7 @@ async def request_safety_headers(request: Request, call_next):
         body = bytearray()
         async for chunk in request.stream():
             if len(body) + len(chunk) > MAX_BODY_BYTES:
-                response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the 16 KB limit.", "request_id": request_id}})
+                response = JSONResponse(status_code=413, content={"error": {"code": "REQUEST_TOO_LARGE", "message": "Request body exceeds the API size limit.", "request_id": request_id}})
                 response.headers["X-Request-ID"] = request_id
                 add_security_headers(response, request.url.path)
                 return response
@@ -219,7 +301,11 @@ def get_metadata():
         return {"trained": False, "message": app.state.model_load_error}
     if app.state.model_bundle is None:
         return {"trained": False, "message": "Train the four target models and restart the API."}
-    return app.state.model_metadata or {"trained": False, "message": "Train models before requesting predictions and restart the API."}
+    response = dict(app.state.model_metadata or {"trained": False, "message": "Train models before requesting predictions and restart the API."})
+    imaging_bundle = getattr(app.state, "imaging_bundle", None)
+    imaging_metadata = getattr(app.state, "imaging_metadata", {"trained": False})
+    response["imaging"] = imaging_summary(imaging_metadata) if imaging_bundle is not None else {"trained": False, "message": "No angiography model is loaded. Train it with backend/train_angiography.py and restart the API."}
+    return response
 
 
 @app.post("/predict")
@@ -235,4 +321,49 @@ def predict(payload: PredictionRequest, request: Request):
     except Exception as exc:
         logger.error("Prediction failed request_id=%s exception_type=%s", request.state.request_id, type(exc).__name__)
         raise HTTPException(status_code=500, detail={"code": "PREDICTION_FAILED", "message": "The estimate could not be calculated. Check the model bundle and try again."}) from None
-    return {"predictions": results, "disclaimer": "Educational and research use only. Not a diagnosis or substitute for formal diagnostic imaging."}
+    imaging_bundle = getattr(app.state, "imaging_bundle", None)
+    imaging_block = {
+        "loaded": imaging_bundle is not None,
+        "applied": False,
+        "lesion_probability": None,
+        "mean_window_probability": None,
+        "windows": None,
+        "message": "Attach a PNG or JPEG angiography frame to activate the imaging branch." if imaging_bundle is not None else "The angiography model is not loaded. Predictions use the tabular model only.",
+    }
+    fusion_block = {"applied": False, "method": None, "tabular_weight": None, "imaging_weight": None}
+    if payload.image:
+        if imaging_bundle is None:
+            raise HTTPException(status_code=503, detail={"code": "IMAGING_UNAVAILABLE", "message": "An image was attached but the angiography model is not loaded. Remove the image or train backend/train_angiography.py."})
+        try:
+            image_bytes = decode_image(payload.image)
+            image_result = imaging.predict_lesion(imaging_bundle, image_bytes)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_IMAGE", "message": str(exc)}) from exc
+        except Exception as exc:
+            logger.error("Imaging prediction failed request_id=%s exception_type=%s", request.state.request_id, type(exc).__name__)
+            raise HTTPException(status_code=500, detail={"code": "IMAGING_FAILED", "message": "The imaging branch could not process this frame. Check the uploaded file and the angiography model bundle."}) from None
+        tabular_cad = results["CAD"]["probability"]
+        imaging_metrics = getattr(app.state, "imaging_metadata", None) or {}
+        frame_auc = (imaging_metrics.get("frame_level") or {}).get("roc_auc")
+        weight = imaging_skill_weight(frame_auc)
+        fused_cad, fusion = fuse_cad_probability(tabular_cad, image_result["lesion_probability"], weight)
+        results["CAD"]["components"] = {"tabular": tabular_cad, "imaging": image_result["lesion_probability"]}
+        if fusion["applied"]:
+            results["CAD"]["probability"] = fused_cad
+            results["CAD"]["prediction"] = str(results["CAD"]["positive_class"]) if fused_cad >= 0.5 else str(bundle.get("classes", {}).get("CAD", ["0", "1"])[0])
+        fusion["frame_auc"] = frame_auc
+        fusion["basis"] = "imaging weight = 2 x (frame-grouped AUC - 0.5), capped at 0.5"
+        imaging_block.update({
+            "applied": True,
+            "lesion_probability": image_result["lesion_probability"],
+            "mean_window_probability": image_result["mean_window_probability"],
+            "windows": image_result["windows"],
+            "positive_class": image_result.get("positive_class"),
+        })
+        fusion_block = fusion
+    return {
+        "predictions": results,
+        "imaging": imaging_block,
+        "fusion": fusion_block,
+        "disclaimer": "Educational and research use only. Not a diagnosis or substitute for formal diagnostic imaging.",
+    }

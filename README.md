@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.jpeg" alt="AngioSight" width="104">
+  <img src="frontend/public/logo.png" alt="AngioSight" width="104">
 </p>
 
 <h1 align="center">AngioSight</h1>
@@ -31,14 +31,14 @@
 
 - **A 54-field assessment form** grouped into *Profile*, *History*, *Vitals & exam*, *Symptoms*, *Lab panel*, and *Cardiac tests* — with a search box and live "filled / blank" counters. Anything you leave blank is imputed by the backend from training-set statistics, and the UI tells you how many fields that is.
 - **One overall CAD probability plus three vessel probabilities**, with the per-vessel class shown honestly (a 0.68 is displayed as *Stenotic*, not quietly promoted to a diagnosis).
+- **An optional angiography frame.** Upload a PNG or JPEG and a second model trained on the CADICA angiography set produces a frame-level lesion probability. It is fused into the CAD estimate only in proportion to how well it actually generalises — and in the shipped build that weight is deliberately tiny, because the frame-level branch is near chance (see below). Both component scores are always shown.
 - **An interactive heart that recolours with the estimate.** The LAD, LCX and RCA meshes shift through green → amber → red as the model's estimate rises. Hovering any structure names it with the official BodyParts3D term; clicking a coronary selects that vessel.
-- **A body-reference figure** that switches between male and female with the `Sex` field.
 - **Dark and light themes**, a mobile layout that stacks to one column, touch rotation and pinch zoom, and a PWA manifest.
 - **Plain-language boundaries.** Every panel states that it is educational decision support, and the vessel colours are labelled as estimates rather than lesion locations.
 
 ## What it deliberately does not do
 
-No accounts, no database, no assessment history, no uploads, no analytics, no payments. Submitted values go to the API and are processed in memory only. That is an intentional privacy boundary for a single-operator research workflow — **not** a production multi-user security model.
+No accounts, no database, no assessment history, no analytics, no payments. Submitted values and an optional angiography frame go to the API and are processed in memory only — no image is stored or logged. That is an intentional privacy boundary for a single-operator research workflow — **not** a production multi-user security model.
 
 ---
 
@@ -58,6 +58,18 @@ These are holdout scores from the shipped bundle (`models/metrics.json`), strati
 Feature ranking for overall CAD, by permutation importance on the holdout (a dataset-level explanation baseline, not a patient-specific or causal one):
 
 `Typical Chest Pain` · `Age` · `Atypical` · `Region RWMA` · `EF-TTE` · `TG` · `FBS` · `Nonanginal` · `BMI` · `Tinversion`
+
+### The imaging branch is honest about being weak
+
+The CADICA angiography branch is a real, reproducible model (`backend/train_angiography.py`), but patient-grouped cross-validation shows it does **not** generalise frame by frame:
+
+| Level | Metric | Value |
+|---|---|---:|
+| Frame | ROC-AUC | **0.53** (chance) |
+| Frame | Balanced accuracy | 0.50 |
+| Patient (mean across many frames) | Ranking ROC-AUC | 0.81 |
+
+The patch classifier is strong on the patches it saw, but the hottest-window score on unseen patients is chance-level — with 42 patients it appears to learn patient-specific appearance, not a transferable lesion cue. Because of that, the fusion weight is derived from the branch's own AUC, `2 × (AUC − 0.5)` capped at 0.5, which in this build is **0.06**: the frame cannot meaningfully move the clinical estimate, and the API says so. Full write-up: **[docs/imaging-model.md](docs/imaging-model.md)**.
 
 ---
 
@@ -108,6 +120,14 @@ python -m backend.train --data "data/extention of Z-Alizadeh sani   dataset.xlsx
 
 `Cath` is recognised as the overall CAD target and `LAD` / `LCX` / `RCA` as the vessel targets; all four are excluded from the inputs. Override with `--targets CAD LAD LCX RCA`, or supply `--positive-labels ...` when the positive class cannot be inferred. **Inspect `models/metrics.json` before trusting the API.** If the app was already open during training, restart the API and reload the browser so the new feature schema is picked up. The API refuses to predict until a bundle exists.
 
+To build the optional angiography branch, point the trainer at a CADICA archive:
+
+```powershell
+python -m backend.train_angiography --zip path\to\cadica.zip --output models
+```
+
+It reads the zip directly (never extracts it), writes `models/angiography.joblib` and `models/angiography_metrics.json`, and takes several minutes because it scans 6,126 frames. Without it, the app simply runs tabular-only; the upload control reports that the imaging branch is unavailable. See **[docs/imaging-model.md](docs/imaging-model.md)** for the method and the honest metrics.
+
 For a container run: `docker compose up --build` after training. The model directory is mounted read-only into the API container.
 
 ### Open it from a phone or tablet
@@ -150,6 +170,7 @@ models/     Trained bundle + metrics.json (git-ignored)
 | [Architecture & API contract](docs/architecture.md) | Service layout, endpoints, request/response shapes |
 | [Dataset & preprocessing contract](docs/data-contract.md) | Columns, encodings, imputation rules |
 | [Model card](docs/model-card.md) | Intended use, metrics, failure modes |
+| [Imaging branch](docs/imaging-model.md) | CADICA lesion detector, honest metrics, fusion policy |
 | [Safety & privacy](docs/safety-and-privacy.md) | Data handling, deployment boundaries |
 | [Anatomy attribution](docs/anatomy-attribution.md) | BodyParts3D source, licence, region naming |
 | [Demo storyboard](docs/demo-script.md) | Walkthrough for a recorded demo |
@@ -158,7 +179,7 @@ models/     Trained bundle + metrics.json (git-ignored)
 ## Verification
 
 ```powershell
-python -m unittest backend.test_api -v     # API boundary + model-mapping tests
+python -m unittest backend.test_api backend.test_imaging -v   # API boundary + imaging tests
 cd frontend; pnpm install --frozen-lockfile
 pnpm run check:framing                     # 15 viewport shapes: heart stays inside the frame
 pnpm run build                             # production bundle
@@ -178,6 +199,7 @@ GitHub Actions runs the Python tests and the frontend build on every push. **CI 
 - Class balance is skewed (216/303 records are `CAD`), which inflates apparent accuracy.
 - Anatomy labels are generic BodyParts3D reference geometry, not patient-specific anatomy or any kind of imaging.
 - `Exertional CP` was dropped from the feature set for having no variance in this dataset.
+- The CADICA imaging branch is at chance frame by frame (ROC-AUC ≈ 0.53 under patient-grouped CV). It is shown and fusion-weighted honestly, but a single frame carries almost no signal and must not be treated as a finding.
 - No TLS, no authentication, no multi-user isolation. Do not put this on the public internet.
 
 ## Before using this for real

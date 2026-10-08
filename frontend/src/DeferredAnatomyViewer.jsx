@@ -1,12 +1,14 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 const AnatomyCanvas = lazy(() => import('./AnatomyViewer.jsx'));
-const BodyFigure = lazy(() => import('./BodyFigure.jsx'));
 
-export default function DeferredAnatomyViewer({ probabilities, onSelect, onHover, sex }) {
+export default function DeferredAnatomyViewer({ probabilities, onSelect, onHover }) {
   const containerRef = useRef(null);
   const [shouldLoad, setShouldLoad] = useState(false);
 
+  // The 3D runtime is ~700 KB, so it is only fetched once the viewer scrolls
+  // into view. Once loaded it stays mounted so later estimates only swap
+  // materials rather than re-creating the scene.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
@@ -24,12 +26,9 @@ export default function DeferredAnatomyViewer({ probabilities, onSelect, onHover
     return () => observer.disconnect();
   }, []);
 
-  return <>
-    <div ref={containerRef} className="viewer-canvas-shell" aria-busy={!shouldLoad}>
-      {shouldLoad
-        ? <Suspense fallback={<div className="viewer-loading" role="status">Loading anatomical reference…</div>}><AnatomyCanvas probabilities={probabilities} onSelect={onSelect} onHover={onHover}/></Suspense>
-        : <div className="viewer-loading" role="status">Interactive heart model</div>}
-    </div>
-    {shouldLoad&&<Suspense fallback={<div className="body-reference body-reference-loading" role="status">Loading body map…</div>}><BodyFigure sex={sex}/></Suspense>}
-  </>;
+  return <div ref={containerRef} className="viewer-canvas-shell" aria-busy={!shouldLoad}>
+    {shouldLoad
+      ? <Suspense fallback={<div className="viewer-loading" role="status">Loading anatomical reference…</div>}><AnatomyCanvas probabilities={probabilities} onSelect={onSelect} onHover={onHover}/></Suspense>
+      : <div className="viewer-loading" role="status">Interactive heart model</div>}
+  </div>;
 }

@@ -22,7 +22,7 @@ Method
 Outputs
 -------
 models/angiography.joblib        scaler + classifier + config + classes
-models/angiography_metrics.json  CV metrics (frame- and patient-level) + fusion config
+models/angiography_metrics.json  CV metrics (frame- and patient-level)
 
 Frame-level discrimination is modest under patient-grouped CV (a small cohort,
 and local lesion cues only weakly separate whole frames), which is reflected in
@@ -93,7 +93,12 @@ def parse_boxes(archive, names, ground_truth):
 
 
 def vessel_labels(archive, patient_ids):
-    """Map patient id -> bool('Number of vessels affected' > 0)."""
+    """Map exact CADICA patient IDs to their metadata-derived CAD label.
+
+    Missing or duplicate patient rows are data-integrity errors. Never turn an
+    absent metadata row into a negative case: that would silently fabricate a
+    label and contaminate the grouped evaluation.
+    """
     import openpyxl
 
     label = {}
@@ -102,13 +107,39 @@ def vessel_labels(archive, patient_ids):
     rows = list(workbook["METADATA"].iter_rows(values_only=True))
     header = list(rows[0])
     index = {k: i for i, k in enumerate(header) if k is not None}
+    required = {"Patient ID", "Number of vessels affected"}
+    if not required <= set(index):
+        raise ValueError(f"CADICA metadata is missing required columns: {', '.join(sorted(required - set(index)))}")
     for row in rows[1:]:
-        if row[0] is None:
+        if index["Patient ID"] >= len(row) or row[index["Patient ID"]] is None:
             continue
-        pid = int(row[index["Patient ID"]])
-        vessels = row[index["Number of vessels affected"]]
-        label[pid] = bool(vessels is not None and float(vessels) > 0)
-    return {pid: label.get(pid, False) for pid in patient_ids}
+        raw_pid = row[index["Patient ID"]]
+        try:
+            pid = int(raw_pid)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"Invalid CADICA Patient ID value: {raw_pid!r}") from exc
+        if isinstance(raw_pid, (float, np.floating)) and raw_pid != pid:
+            raise ValueError(f"Invalid CADICA Patient ID value: {raw_pid!r}")
+        if pid in label:
+            raise ValueError(f"Duplicate CADICA metadata row for patient p{pid}.")
+        label_index = index["Number of vessels affected"]
+        vessels = row[label_index] if label_index < len(row) else None
+        if vessels is None:
+            raise ValueError(f"CADICA patient p{pid} has no vessels-affected label.")
+        try:
+            count = float(vessels)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"Invalid vessels-affected value for patient p{pid}: {vessels!r}") from exc
+        if not np.isfinite(count) or count < 0:
+            raise ValueError(f"Invalid vessels-affected value for patient p{pid}: {vessels!r}")
+        label[pid] = count > 0
+    expected = set(patient_ids)
+    actual = set(label)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        raise ValueError(f"CADICA patient metadata does not match selected-video IDs (missing={missing[:8]}, extra={extra[:8]}).")
+    return {pid: label[pid] for pid in sorted(expected)}
 
 
 def collect_frames_and_patches(zip_path):
@@ -323,12 +354,6 @@ def main():
         "seed": args.seed,
         "frame_level": frame_report,
         "patient_level_vessels_affected": patient_report,
-        "fusion": {
-            "method": "weighted average of the tabular CAD probability and the imaging lesion probability",
-            "policy": "The imaging weight is derived from this branch's patient-grouped frame-level ROC-AUC as 2*(AUC-0.5) capped at 0.5, so a near-chance branch cannot move the clinical estimate.",
-            "frame_auc": frame_report["roc_auc"],
-            "note": "The API reports both component scores and the weights it applied.",
-        },
         "runtime": {"python": platform.python_version(), "numpy": np.__version__, "scikit_learn": sklearn_version, "joblib": joblib.__version__, "pillow": Image.__version__},
         "safety": "Research/educational branch only; patient-grouped metrics are estimates, not clinical validation.",
         "elapsed_seconds": round(time.time() - started, 1),

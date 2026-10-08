@@ -158,36 +158,67 @@ def build_predictions(features: dict[str, Any], bundle: dict[str, Any]) -> dict[
     return results
 
 
+def build_local_explanation(features: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any] | None:
+    """Compare supplied values with the fitted cohort reference, one field at a time.
+
+    This is a transparent sensitivity view, not SHAP, a causal effect, or an
+    additive decomposition. The preprocessing statistics are learned from the
+    training split and live inside the trusted CAD pipeline.
+    """
+    pipeline = bundle.get("models", {}).get("CAD")
+    if pipeline is None:
+        return None
+    preprocess = pipeline.named_steps.get("preprocess")
+    if preprocess is None or not hasattr(preprocess, "transformers_"):
+        return None
+    reference: dict[str, Any] = {}
+    for name, transformer, columns in preprocess.transformers_:
+        if name not in {"numeric", "categorical"} or transformer == "drop":
+            continue
+        imputer = transformer.named_steps.get("impute")
+        if imputer is None:
+            continue
+        reference.update({str(column): value for column, value in zip(columns, imputer.statistics_)})
+    if not reference:
+        return None
+    reference_row = pd.DataFrame([{name: reference.get(name) for name in bundle["features"]}], columns=bundle["features"])
+    classes = list(pipeline.classes_)
+    positive_index = classes.index(1) if 1 in classes else len(classes) - 1
+    baseline_probability = float(pipeline.predict_proba(reference_row)[0][positive_index])
+    supplied = [
+        name for name in bundle["features"]
+        if name in features and features[name] is not None and features[name] != ""
+        and name in reference
+    ]
+    if not supplied:
+        return {"method": "one_feature_reference_substitution", "baseline_probability": baseline_probability, "positive_class": str(bundle.get("classes", {}).get("CAD", ["0", "1"])[1]), "features": []}
+    rows = []
+    for name in supplied:
+        row = dict(reference)
+        row[name] = features[name]
+        rows.append(row)
+    probabilities = pipeline.predict_proba(pd.DataFrame(rows, columns=bundle["features"]))[:, positive_index]
+    details = [{
+        "name": name,
+        "value": features[name],
+        "reference_value": reference[name].item() if hasattr(reference[name], "item") else reference[name],
+        "probability": float(probability),
+        "delta": float(probability - baseline_probability),
+    } for name, probability in zip(supplied, probabilities)]
+    details.sort(key=lambda item: abs(item["delta"]), reverse=True)
+    return {
+        "method": "one_feature_reference_substitution",
+        "baseline_probability": baseline_probability,
+        "positive_class": str(bundle.get("classes", {}).get("CAD", ["0", "1"])[1]),
+        "features": details,
+    }
+
+
 def decode_image(payload: str) -> bytes:
     """Strip a data URL prefix if present and return the raw image bytes."""
     if payload.startswith("data:"):
         payload = payload.split(",", 1)[1]
     return base64.b64decode(payload, validate=True)
-
-
-def imaging_skill_weight(frame_auc: float | None) -> float:
-    """Weight the imaging branch by how far its frame-level AUC beats chance.
-
-    A branch that cannot discriminate frames (AUC <= 0.5) contributes nothing;
-    a strong branch (AUC >= 0.75) is allowed up to half the fused estimate. This
-    keeps the fusion honest: a near-chance model cannot move the clinical score.
-    """
-    if frame_auc is None or not isinstance(frame_auc, (int, float)) or not math.isfinite(float(frame_auc)):
-        return 0.0
-    return float(max(0.0, min(0.5, 2.0 * (float(frame_auc) - 0.5))))
-
-
-def fuse_cad_probability(tabular: float, imaging_lesion: float, imaging_weight: float) -> tuple[float, dict[str, Any]]:
-    weight = float(max(0.0, min(1.0, imaging_weight)))
-    magnitude = max(0.0, min(1.0, tabular))
-    imaging_value = max(0.0, min(1.0, imaging_lesion))
-    fused = weight * imaging_value + (1.0 - weight) * magnitude
-    return float(fused), {
-        "method": "weighted average of the tabular CAD probability and the imaging lesion probability",
-        "tabular_weight": float(1.0 - weight),
-        "imaging_weight": weight,
-        "applied": weight > 0.0,
-    }
 
 
 def imaging_summary(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -202,7 +233,7 @@ def imaging_summary(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
         "folds": metadata.get("folds"),
         "frame_level": {"n": frame.get("n"), "roc_auc": frame.get("roc_auc"), "accuracy": frame.get("accuracy"), "balanced_accuracy": frame.get("balanced_accuracy")},
         "patient_level_vessels_affected": {"n": patient.get("n"), "roc_auc": patient.get("max", {}).get("roc_auc"), "accuracy": patient.get("max", {}).get("accuracy_0.5")},
-        "fusion": metadata.get("fusion"),
+        "fusion": {"applied": False, "policy": "disabled until a verified patient link is available"},
     }
 
 
@@ -316,6 +347,7 @@ def predict(payload: PredictionRequest, request: Request):
     try:
         validate_feature_values(payload.features, app.state.model_metadata.get("feature_schema", {}))
         results = build_predictions(payload.features, bundle)
+        explanation = build_local_explanation(payload.features, bundle)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_FEATURES", "message": str(exc)}) from exc
     except Exception as exc:
@@ -330,7 +362,13 @@ def predict(payload: PredictionRequest, request: Request):
         "windows": None,
         "message": "Attach a PNG or JPEG angiography frame to activate the imaging branch." if imaging_bundle is not None else "The angiography model is not loaded. Predictions use the tabular model only.",
     }
-    fusion_block = {"applied": False, "method": None, "tabular_weight": None, "imaging_weight": None}
+    fusion_block = {
+        "applied": False,
+        "method": "disabled_without_verified_patient_link",
+        "tabular_weight": 1.0,
+        "imaging_weight": 0.0,
+        "reason": "The uploaded frame has no verified patient identifier matching the clinical assessment.",
+    }
     if payload.image:
         if imaging_bundle is None:
             raise HTTPException(status_code=503, detail={"code": "IMAGING_UNAVAILABLE", "message": "An image was attached but the angiography model is not loaded. Remove the image or train backend/train_angiography.py."})
@@ -342,27 +380,17 @@ def predict(payload: PredictionRequest, request: Request):
         except Exception as exc:
             logger.error("Imaging prediction failed request_id=%s exception_type=%s", request.state.request_id, type(exc).__name__)
             raise HTTPException(status_code=500, detail={"code": "IMAGING_FAILED", "message": "The imaging branch could not process this frame. Check the uploaded file and the angiography model bundle."}) from None
-        tabular_cad = results["CAD"]["probability"]
-        imaging_metrics = getattr(app.state, "imaging_metadata", None) or {}
-        frame_auc = (imaging_metrics.get("frame_level") or {}).get("roc_auc")
-        weight = imaging_skill_weight(frame_auc)
-        fused_cad, fusion = fuse_cad_probability(tabular_cad, image_result["lesion_probability"], weight)
-        results["CAD"]["components"] = {"tabular": tabular_cad, "imaging": image_result["lesion_probability"]}
-        if fusion["applied"]:
-            results["CAD"]["probability"] = fused_cad
-            results["CAD"]["prediction"] = str(results["CAD"]["positive_class"]) if fused_cad >= 0.5 else str(bundle.get("classes", {}).get("CAD", ["0", "1"])[0])
-        fusion["frame_auc"] = frame_auc
-        fusion["basis"] = "imaging weight = 2 x (frame-grouped AUC - 0.5), capped at 0.5"
         imaging_block.update({
             "applied": True,
             "lesion_probability": image_result["lesion_probability"],
             "mean_window_probability": image_result["mean_window_probability"],
             "windows": image_result["windows"],
             "positive_class": image_result.get("positive_class"),
+            "message": "Stand-alone frame score. The frame is not linked to the clinical assessment, so it does not change the CAD estimate.",
         })
-        fusion_block = fusion
     return {
         "predictions": results,
+        "explanation": explanation,
         "imaging": imaging_block,
         "fusion": fusion_block,
         "disclaimer": "Educational and research use only. Not a diagnosis or substitute for formal diagnostic imaging.",

@@ -6,12 +6,12 @@ AngioSight has two model branches:
    predicts four targets (`CAD`, `LAD`, `LCX`, `RCA`) from 54 clinical features.
    This is the branch the 3D heart and the vessel rows are driven by.
 2. **Imaging branch** — a patch-level lesion detector trained on **CADICA**
-   angiography frames. It contributes an optional, clearly-labelled probability
-   that is fused into the overall `CAD` estimate only in proportion to how well
-   it actually generalises.
+   angiography frames. It returns a stand-alone frame score. It does not alter
+   the clinical estimate because the app cannot verify that an uploaded frame
+   belongs to the same patient as the entered clinical values.
 
-This document describes the imaging branch, its honest metrics, and why its
-weight is small in the shipped build.
+This document describes the imaging branch, its measured performance, and the
+patient-link boundary in the shipped build.
 
 ## Dataset
 
@@ -63,8 +63,12 @@ Frame-level results under 5-fold patient-grouped cross-validation:
 | Frame | ROC-AUC | **0.53** |
 | Frame | Accuracy | 0.65 |
 | Frame | Balanced accuracy | 0.50 |
-| Patient (vessels affected > 0), ranking by mean frame score | ROC-AUC | 0.81 |
 | Patient, ranking by **max** frame score | ROC-AUC | 0.55 |
+| Patient, max frame score at threshold 0.5 | Accuracy | 0.76 |
+
+At that patient threshold the confusion matrix is `[[0, 10], [0, 32]]`: every
+patient is predicted positive. The 0.76 accuracy is therefore just the positive
+class prevalence, not useful discrimination.
 
 **The frame-level branch is essentially at chance.** The patch classifier is
 strong on the patches it was trained on, but the hottest-window score does not
@@ -72,31 +76,32 @@ transfer to unseen patients. With only 42 patients, the model appears to learn
 patient-specific appearance (contrast, catheter, anatomy) rather than a
 transferable lesion cue.
 
-The patient-level mean AUC of 0.81 is the one encouraging signal, but it
-requires aggregating many frames of one patient — it is **not** available from a
-single uploaded frame, which is what the app accepts.
+The saved evaluation artifact contains max-frame patient ranking (AUC 0.55),
+not the earlier exploratory mean-frame score. The displayed single-frame score
+is not a patient-level CADICA profile and cannot be used to infer a patient's
+CADICA clinical metadata.
 
 Whole-frame classifiers (HOG over the whole frame, downsampled intensity, and
 others) were also tried and were all chance-level (AUC 0.51–0.58). The
 patch-detector results above are the best honest frame-level result obtained.
 
-## Fusion policy
+## Patient-link boundary
 
-Because the frame-level branch is near chance, it must not silently move a
-clinical estimate. The fusion weight is therefore derived from the branch's own
-cross-validated frame AUC:
+The original implementation fused the uploaded frame with the current form
+values using a weight derived from frame AUC. However, the clinical model is
+trained on the separate Z-Alizadeh Sani cohort, while the uploaded image can be
+any frame and has no required CADICA patient identifier. A skill-based weight
+does not establish that the two inputs belong to the same patient. The API now
+reports the frame score separately and keeps the CAD estimate unchanged.
 
-```
-imaging_weight = clamp( 2 × (frame_AUC − 0.5), 0.0, 0.5 )
-```
-
-- AUC ≤ 0.50 → weight 0 — the branch cannot change the estimate.
-- AUC 0.53 (this build) → weight 0.06 — a token, transparent contribution.
-- AUC ≥ 0.75 → the branch is allowed up to half the fused estimate.
-
-The response always reports the tabular score, the imaging score, the applied
-weights, the frame AUC the weight came from, and the window count. Nothing is
-hidden. If the branch is at chance, the API says so and leaves `CAD` unchanged.
+The official CADICA archive contains `metadata.xlsx` with patient clinical data
+and patient-keyed video folders. The archive is not included in this checkout;
+only the trained imaging bundle and metrics are present. The trainer now rejects
+missing, duplicate, invalid, or mismatched patient metadata labels instead of
+silently treating absent labels as negative. A complete app-side patient
+catalog, clinical-field mapping, and frame-to-patient selection still require
+the archive and a reviewed mapping between its metadata columns and the
+Z-Alizadeh model's 54 input features.
 
 ## API
 
@@ -124,18 +129,17 @@ The response adds:
     "positive_class": "lesion"
   },
   "fusion": {
-    "applied": true,
-    "method": "weighted average ...",
-    "tabular_weight": 0.94,
-    "imaging_weight": 0.06,
-    "frame_auc": 0.53,
-    "basis": "imaging weight = 2 x (frame-grouped AUC - 0.5), capped at 0.5"
+    "applied": false,
+    "method": "disabled_without_verified_patient_link",
+    "tabular_weight": 1.0,
+    "imaging_weight": 0.0,
+    "reason": "The uploaded frame has no verified patient identifier matching the clinical assessment."
   }
 }
 ```
 
-When `CAD` is fused, `predictions.CAD.components` holds the separate
-`tabular` and `imaging` probabilities.
+The `CAD` estimate remains unchanged. The imaging block contains the separate
+stand-alone frame score.
 
 ## Reproduce
 

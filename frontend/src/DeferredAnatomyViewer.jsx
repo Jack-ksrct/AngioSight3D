@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 const AnatomyCanvas = lazy(() => import('./AnatomyViewer.jsx'));
 
-export default function DeferredAnatomyViewer({ probabilities, onSelect, onHover }) {
+export default function DeferredAnatomyViewer({ probabilities, onSelect, onHover, view, interactive = true, appearance = 'anatomy' }) {
   const containerRef = useRef(null);
   const [shouldLoad, setShouldLoad] = useState(false);
 
@@ -28,7 +28,7 @@ export default function DeferredAnatomyViewer({ probabilities, onSelect, onHover
 
   return <div ref={containerRef} className="viewer-canvas-shell" aria-busy={!shouldLoad}>
     {shouldLoad
-      ? <Suspense fallback={<div className="viewer-loading" role="status">Loading anatomical reference…</div>}><AnatomyCanvas probabilities={probabilities} onSelect={onSelect} onHover={onHover}/></Suspense>
+      ? <Suspense fallback={<div className="viewer-loading" role="status">Loading anatomical reference…</div>}><AnatomyCanvas probabilities={probabilities} onSelect={onSelect} onHover={onHover} view={view} interactive={interactive} appearance={appearance}/></Suspense>
       : <div className="viewer-loading" role="status">Interactive heart model</div>}
   </div>;
 }

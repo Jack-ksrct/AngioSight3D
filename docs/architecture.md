@@ -28,7 +28,7 @@ The supplied dataset is small and is not evidence of clinical validity. The proj
 - **Serving:** Vite proxy for local development; Docker Compose runs Nginx and the API on a private local network.
 - **Deployment assumption:** Single-operator local/research environment. No public cloud or multi-tenant service is currently supported.
 
-The 3D engine is split into its own production chunk and loaded when the viewer approaches the viewport. The browser first downloads the small assessment application; Three.js is intentionally larger than the general chunk budget because the anatomy view requires a WebGL renderer.
+The 3D engine is split into production chunks and loaded only when a 3D viewer is rendered. The detailed BodyParts3D heart is the primary anatomical reference. WebGL is required for rotation; the viewer is loaded on demand and uses capped pixel density for typical integrated graphics.
 
 ## Component and data flow
 
@@ -45,6 +45,7 @@ Responsive React app ── same-origin JSON ──► FastAPI
         │                                      ├─ in-memory model inference
         │                                      └─ request ID + sanitized errors
         ├─ anatomy mesh (static BodyParts3D reference)
+        ├─ one-feature CAD sensitivity against the fitted training-reference profile
         └─ results held in browser memory; no assessment is written to disk
 ```
 
@@ -82,7 +83,7 @@ The browser uses same-origin `/api` paths; Vite and Nginx proxy them to FastAPI.
 
 `POST /predict` accepts `{"features": {"Age": 52, "Sex": "Female"}}`, optionally with `"image": "<base64 PNG/JPEG>"` (or a `data:` URL). Omitted expected fields are treated as blank; unexpected feature keys are rejected. Numeric inputs must be finite JSON numbers. Categorical inputs must be strings. Booleans, arrays, objects, and oversized text values are rejected. Images must be PNG or JPEG and at most 5 MB decoded (6 MB request ceiling).
 
-Successful responses use `{"predictions": {"CAD": {"probability": 0.0, "prediction": "...", "positive_class": "..."}}, "disclaimer": "..."}`. When an image is supplied the response also carries `imaging` (lesion probability, window count) and `fusion` (weights, frame AUC, basis), and `predictions.CAD.components` holds the separate tabular and imaging probabilities. Errors use `{"error": {"code": "...", "message": "...", "request_id": "..."}}`. The request ID is safe to include in a support report; never include patient values in a report.
+Successful responses include `predictions`, `explanation`, and `disclaimer`. The CAD explanation compares each supplied value against the pipeline's fitted training reference, changing one feature at a time; its signed probability-point difference is a sensitivity comparison, not SHAP, a causal estimate, or an additive decomposition. When an image is supplied the response also carries a stand-alone `imaging` score and an unapplied `fusion` policy block; an unlinked image never changes the clinical estimate. Errors use `{"error": {"code": "...", "message": "...", "request_id": "..."}}`. The request ID is safe to include in a support report; never include patient values in a report.
 
 OpenAPI docs are disabled by default. Set `ENABLE_API_DOCS=true` only in a trusted development environment.
 

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -53,7 +53,7 @@ function drawnBounds(root) {
 
 let warnedUnlabelled = false;
 
-function HeartMesh({ probabilities, onSelect, onHover }) {
+function HeartMesh({ probabilities, onSelect, onHover, appearance }) {
   const materials = useLoader(MTLLoader, '/models/bodyparts3d-heart.mtl');
   const source = useLoader(OBJLoader, '/models/bodyparts3d-heart.obj', loader => loader.setMaterials(materials));
   const camera = useThree(state => state.camera);
@@ -116,14 +116,22 @@ function HeartMesh({ probabilities, onSelect, onHover }) {
       list.forEach(material => {
         const part = describePart(object.name, material?.name || '', probabilities);
         if (!part) unlabelled.add(object.name);
-        (material || (object.material = new THREE.MeshPhysicalMaterial())).color.set(part?.color || PART_GROUP_COLORS.myocardium);
+        const angiographyColor = appearance === 'angiography'
+          ? material?.name?.startsWith('artery_') ? '#f4e8c9'
+            : part?.group === 'coronary' ? '#f4e8c9'
+              : part?.group === 'vein' ? '#587887'
+              : part?.group === 'cavity' ? '#3c4b53'
+                  : part?.group === 'valve' ? '#b6b9b1'
+                  : part?.group === 'artery' ? '#7e8c92' : '#69767c'
+          : null;
+        (material || (object.material = new THREE.MeshPhysicalMaterial())).color.set(angiographyColor || part?.color || PART_GROUP_COLORS.myocardium);
       });
     });
     if (unlabelled.size && !warnedUnlabelled) {
       warnedUnlabelled = true;
       console.warn(`[AngioSight3D] ${unlabelled.size} BodyParts3D regions are missing from PART_LABELS and fall back to the myocardium colour. Regenerate the table with: python scripts/build_anatomy_labels.py`);
     }
-  }, [model, probabilities.LAD, probabilities.LCX, probabilities.RCA]);
+  }, [model, probabilities.LAD, probabilities.LCX, probabilities.RCA, appearance]);
 
   // Release only the materials this viewer created; the geometries are shared
   // with the module-level loader cache and must not be disposed here.
@@ -153,21 +161,35 @@ function HeartMesh({ probabilities, onSelect, onHover }) {
   }} onPointerOut={() => { document.body.style.cursor = 'auto'; onHover?.(null); }} />;
 }
 
-function Anatomy({ probabilities, onSelect, onHover }) {
+const VIEW_PRESETS = {
+  anterior: [0, 0, 2.75],
+  posterior: [0, 0, -2.75],
+  left: [-2.75, 0, 0],
+  right: [2.75, 0, 0],
+  superior: [0, 2.75, 0],
+};
+
+function Anatomy({ probabilities, onSelect, onHover, view, interactive, appearance }) {
+  const controls = useRef(null);
+  useEffect(() => {
+    const orbit = controls.current;
+    if (!orbit) return;
+    orbit.object.position.set(...(VIEW_PRESETS[view] || VIEW_PRESETS.anterior));
+    orbit.target.set(0, 0, 0);
+    orbit.update();
+  }, [view]);
   return <>
     {/* A soft, slightly cool ambient fill keeps cavities readable, while the
         warm key and cool rim separate the great vessels from the myocardium. */}
-    <hemisphereLight args={['#cfe9ff', '#4a2b33', 0.85]} />
-    <ambientLight intensity={0.35} />
-    <directionalLight position={[2.6, 3.4, 4.2]} intensity={2.3} color="#fff4ea" />
-    <directionalLight position={[-3.4, -1.2, -2.6]} intensity={0.7} color="#7fb6ff" />
-    <pointLight position={[-2.8, -1.5, 2.2]} intensity={0.5} color="#ff8f7d" />
-    <HeartMesh probabilities={probabilities} onSelect={onSelect} onHover={onHover} />
-    <OrbitControls enablePan={false} minDistance={1.55} maxDistance={5.5} />
+    {appearance === 'angiography'
+      ? <><hemisphereLight args={['#d5e1e5', '#17232a', 0.7]} /><ambientLight intensity={0.5} /><directionalLight position={[2.6, 3.4, 4.2]} intensity={2.1} color="#e8f0f2" /><directionalLight position={[-3.4, -1.2, -2.6]} intensity={0.85} color="#8ba1ad" /></>
+      : <><hemisphereLight args={['#cfe9ff', '#4a2b33', 0.85]} /><ambientLight intensity={0.35} /><directionalLight position={[2.6, 3.4, 4.2]} intensity={2.3} color="#fff4ea" /><directionalLight position={[-3.4, -1.2, -2.6]} intensity={0.7} color="#7fb6ff" /><pointLight position={[-2.8, -1.5, 2.2]} intensity={0.5} color="#ff8f7d" /></>}
+    <HeartMesh probabilities={probabilities} onSelect={onSelect} onHover={onHover} appearance={appearance} />
+    <OrbitControls ref={controls} enabled={interactive} enablePan={false} minDistance={1.55} maxDistance={5.5} />
   </>;
 }
 
-export default function AnatomyViewer({ probabilities, onSelect, onHover }) {
+export default function AnatomyViewer({ probabilities, onSelect, onHover, view = 'anterior', interactive = true, appearance = 'anatomy' }) {
   return <Canvas
     camera={{position:[0,0,2.75],fov:38}}
     gl={{ antialias: true, alpha: true }}
@@ -178,6 +200,6 @@ export default function AnatomyViewer({ probabilities, onSelect, onHover }) {
       gl.outputColorSpace = THREE.SRGBColorSpace;
     }}
   >
-    <Anatomy probabilities={probabilities} onSelect={onSelect} onHover={onHover} />
+    <Anatomy probabilities={probabilities} onSelect={onSelect} onHover={onHover} view={view} interactive={interactive} appearance={appearance} />
   </Canvas>;
 }

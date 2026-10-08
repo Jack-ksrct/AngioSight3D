@@ -4,7 +4,7 @@
 
 <h1 align="center">AngioSight</h1>
 <p align="center"><strong>Dataset-derived CAD and LAD&nbsp;/&nbsp;LCX&nbsp;/&nbsp;RCA estimates, drawn onto a real anatomical heart.</strong></p>
-<p align="center">A research prototype: type in a cardiovascular profile, get a calibrated-looking score — then see which coronary territories the model is talking about, on 89 officially named structures from BodyParts3D.</p>
+<p align="center">A research prototype: enter a cardiovascular profile, review model estimates, and explore coronary anatomy across 89 officially named BodyParts3D structures.</p>
 
 ![AngioSight showing a completed assessment beside the interactive heart](docs/images/app-overview.png)
 
@@ -31,8 +31,9 @@
 
 - **A 54-field assessment form** grouped into *Profile*, *History*, *Vitals & exam*, *Symptoms*, *Lab panel*, and *Cardiac tests* — with a search box and live "filled / blank" counters. Anything you leave blank is imputed by the backend from training-set statistics, and the UI tells you how many fields that is.
 - **One overall CAD probability plus three vessel probabilities**, with the per-vessel class shown honestly (a 0.68 is displayed as *Stenotic*, not quietly promoted to a diagnosis).
-- **An optional angiography frame.** Upload a PNG or JPEG and a second model trained on the CADICA angiography set produces a frame-level lesion probability. It is fused into the CAD estimate only in proportion to how well it actually generalises — and in the shipped build that weight is deliberately tiny, because the frame-level branch is near chance (see below). Both component scores are always shown.
-- **An interactive heart that recolours with the estimate.** The LAD, LCX and RCA meshes shift through green → amber → red as the model's estimate rises. Hovering any structure names it with the official BodyParts3D term; clicking a coronary selects that vessel.
+- **An optional angiography frame.** Upload a PNG or JPEG and a second model trained on CADICA produces a stand-alone frame-level lesion score. It does not alter the clinical CAD estimate because the uploaded frame has no verified patient link to the clinical form.
+- **Interactive heart reference.** The LAD, LCX and RCA meshes shift through green → amber → red as the model's estimate rises. Hovering a structure names it with the official BodyParts3D term; clicking a coronary selects that vessel.
+- **Patient-input sensitivity alongside entered values.** The CAD explanation panel shows each supplied value and how its one-at-a-time substitution into a typical training-profile reference changes the model probability. This is explicitly labeled as a sensitivity comparison, not a causal or additive explanation. Dataset-level permutation importance remains available below it.
 - **Dark and light themes**, a mobile layout that stacks to one column, touch rotation and pinch zoom, and a PWA manifest.
 - **Plain-language boundaries.** Every panel states that it is educational decision support, and the vessel colours are labelled as estimates rather than lesion locations.
 
@@ -67,9 +68,9 @@ The CADICA angiography branch is a real, reproducible model (`backend/train_angi
 |---|---|---:|
 | Frame | ROC-AUC | **0.53** (chance) |
 | Frame | Balanced accuracy | 0.50 |
-| Patient (mean across many frames) | Ranking ROC-AUC | 0.81 |
+| Patient (maximum frame score) | Ranking ROC-AUC | 0.55 |
 
-The patch classifier is strong on the patches it saw, but the hottest-window score on unseen patients is chance-level — with 42 patients it appears to learn patient-specific appearance, not a transferable lesion cue. Because of that, the fusion weight is derived from the branch's own AUC, `2 × (AUC − 0.5)` capped at 0.5, which in this build is **0.06**: the frame cannot meaningfully move the clinical estimate, and the API says so. Full write-up: **[docs/imaging-model.md](docs/imaging-model.md)**.
+The patch classifier is strong on the patches it saw, but the hottest-window score on unseen patients is chance-level — with 42 patients it appears to learn patient-specific appearance, not a transferable lesion cue. The saved artifact reports max-frame patient AUC of 0.55; at threshold 0.5 it predicts all cases positive, so its 76.2% accuracy is not useful discrimination. The app keeps frame and clinical scores separate. Full write-up: **[docs/imaging-model.md](docs/imaging-model.md)**.
 
 ---
 
@@ -199,7 +200,7 @@ GitHub Actions runs the Python tests and the frontend build on every push. **CI 
 - Class balance is skewed (216/303 records are `CAD`), which inflates apparent accuracy.
 - Anatomy labels are generic BodyParts3D reference geometry, not patient-specific anatomy or any kind of imaging.
 - `Exertional CP` was dropped from the feature set for having no variance in this dataset.
-- The CADICA imaging branch is at chance frame by frame (ROC-AUC ≈ 0.53 under patient-grouped CV). It is shown and fusion-weighted honestly, but a single frame carries almost no signal and must not be treated as a finding.
+- The CADICA imaging branch is at chance frame by frame (ROC-AUC ≈ 0.53 under patient-grouped CV). It is reported separately and never changes the clinical estimate because the uploaded scan is not verified as belonging to the patient whose inputs are entered.
 - No TLS, no authentication, no multi-user isolation. Do not put this on the public internet.
 
 ## Before using this for real

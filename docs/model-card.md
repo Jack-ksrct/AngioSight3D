@@ -8,7 +8,9 @@ Educational demonstration and software integration work only. The models are not
 
 Four independent binary `RandomForestClassifier` pipelines predict CAD, LAD, LCX, and RCA labels. Numeric and categorical preprocessing is inside each scikit-learn pipeline. The fixed holdout metrics and permutation importance in `models/metrics.json` are computed from the held-out rows.
 
-A second, optional branch scores a single angiography frame using a patch-level lesion detector trained on the CADICA set (a HOG descriptor over 96 px windows, logistic regression). Under patient-grouped cross-validation its frame-level ROC-AUC is about 0.53 — essentially chance — so its contribution to the overall CAD estimate is weighted by its own measured skill, `2 x (AUC - 0.5)` capped at 0.5. In the shipped build that weight is 0.06. The branch is shown and its metrics are reported; it is not allowed to meaningfully override the tabular model. See `docs/imaging-model.md`.
+A second, optional branch scores a single angiography frame using a patch-level lesion detector trained on CADICA (HOG descriptors over 96 px windows and logistic regression). Under patient-grouped cross-validation its frame-level ROC-AUC is about 0.53, essentially chance. The app reports this as a separate frame score; it does not fuse it into the CAD estimate because no verified patient link connects an uploaded image to the entered clinical profile. See `docs/imaging-model.md`.
+
+The assessment also returns a patient-input sensitivity view for CAD. It starts from the CAD pipeline's fitted training-set median/mode reference profile, replaces one user-supplied feature at a time with the entered value, and reports the probability difference. This provides the entered measurement beside a relative model sensitivity. It is not SHAP, LIME, an additive explanation, a causal effect, or a clinical interpretation; interactions between features are not captured. Blank inputs are not shown.
 
 ## Evaluation
 
@@ -21,7 +23,8 @@ Accuracy, precision, recall, F1, ROC-AUC, confusion matrix, sample counts, and c
 - Default positive-label selection is heuristic and must be checked in the generated metrics.
 - The model assumes feature definitions and units at inference match those during training.
 - Vessel probabilities are not lesion maps and do not provide location or severity grading.
-- The CADICA angiography branch is at chance frame by frame; a single frame carries almost no signal. Its fusion weight is deliberately near zero for this reason.
+- The patient-input sensitivity display is a one-feature-at-a-time reference comparison; it can change with the chosen reference and does not explain feature interactions.
+- The CADICA angiography branch is at chance frame by frame; a single frame carries almost no signal. It remains separate from the clinical estimate until a verified same-patient link is available.
 
 ## Before any clinical research use
 

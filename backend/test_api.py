@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 from pydantic import ValidationError
 
 from backend.app.imaging import window_features
-from backend.app.main import MAX_BODY_BYTES, PredictionRequest, app, build_predictions, fuse_cad_probability, imaging_skill_weight, validate_feature_values
+from backend.app.main import MAX_BODY_BYTES, PredictionRequest, app, build_predictions, validate_feature_values
 
 
 class FixedPipeline:
@@ -226,25 +226,6 @@ class ImageRequestTests(unittest.TestCase):
             PredictionRequest(features={}, image=payload)
 
 
-class FusionTests(unittest.TestCase):
-    def test_skill_weight_rises_with_auc(self):
-        self.assertEqual(imaging_skill_weight(None), 0.0)
-        self.assertEqual(imaging_skill_weight(0.5), 0.0)
-        self.assertAlmostEqual(imaging_skill_weight(0.75), 0.5)
-        self.assertAlmostEqual(imaging_skill_weight(0.9), 0.5)
-
-    def test_fusion_blends_by_weight(self):
-        fused, config = fuse_cad_probability(0.6, 0.4, 0.5)
-        self.assertAlmostEqual(fused, 0.5)
-        self.assertTrue(config["applied"])
-        self.assertEqual(config["imaging_weight"], 0.5)
-
-    def test_zero_weight_does_not_move_probability(self):
-        fused, config = fuse_cad_probability(0.6, 0.1, 0.0)
-        self.assertAlmostEqual(fused, 0.6)
-        self.assertFalse(config["applied"])
-
-
 def tiny_imaging_bundle():
     rng = np.random.RandomState(11)
     features = window_features(rng.rand(192, 192).astype(np.float32))
@@ -272,16 +253,15 @@ class ImagingIntegrationTests(unittest.TestCase):
     def request(self, path, method="GET", body=None, extra_headers=()):
         return asyncio.run(asgi_request(path, method, body, extra_headers))
 
-    def test_predict_with_image_returns_fusion(self):
+    def test_image_score_is_patient_unlinked_and_never_changes_cad(self):
         body = {"features": {"Age": 60}, "image": base64.b64encode(tiny_png()).decode()}
         status, _, response = self.request("/predict", "POST", body)
         self.assertEqual(status, 200)
-        self.assertTrue(response["fusion"]["applied"])
+        self.assertFalse(response["fusion"]["applied"])
+        self.assertEqual(response["fusion"]["imaging_weight"], 0.0)
+        self.assertIn("verified patient identifier", response["fusion"]["reason"])
         self.assertIsNotNone(response["imaging"]["lesion_probability"])
-        cad = response["predictions"]["CAD"]
-        self.assertIn("components", cad)
-        self.assertAlmostEqual(cad["components"]["tabular"], 0.6)
-        self.assertAlmostEqual(cad["probability"], 0.5 * 0.6 + 0.5 * cad["components"]["imaging"])
+        self.assertAlmostEqual(response["predictions"]["CAD"]["probability"], 0.6)
 
     def test_predict_without_image_does_not_fuse(self):
         status, _, response = self.request("/predict", "POST", {"features": {"Age": 60}})
@@ -300,16 +280,6 @@ class ImagingIntegrationTests(unittest.TestCase):
         status, _, response = self.request("/metadata")
         self.assertEqual(status, 200)
         self.assertTrue(response["imaging"]["trained"])
-
-    def test_low_skill_image_is_not_fused(self):
-        app.state.imaging_metadata = {"trained": True, "frame_level": {"n": 9, "roc_auc": 0.5}}
-        body = {"features": {"Age": 60}, "image": base64.b64encode(tiny_png()).decode()}
-        status, _, response = self.request("/predict", "POST", body)
-        self.assertEqual(status, 200)
-        self.assertFalse(response["fusion"]["applied"])
-        self.assertEqual(response["predictions"]["CAD"]["probability"], 0.6)
-        self.assertIsNotNone(response["imaging"]["lesion_probability"])
-
 
 if __name__ == "__main__":
     unittest.main()

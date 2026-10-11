@@ -1,6 +1,10 @@
-<p align="center">
-  <img src="frontend/public/logo.png" alt="AngioSight logo" width="132">
-</p>
+<table align="center" role="presentation">
+  <tr>
+    <td bgcolor="#ffffff" align="center">
+      <img src="frontend/public/logo.png" alt="AngioSight logo" width="280">
+    </td>
+  </tr>
+</table>
 
 <h1 align="center">AngioSight</h1>
 

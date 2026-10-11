@@ -30,3 +30,7 @@ python scripts/build_anatomy_labels.py
 ```
 
 The LAD, LCX, and RCA colors reflect patient-level model outputs, not lesion localization. The source dataset has no lesion coordinates, and these meshes are educational anatomical references rather than patient-specific anatomy or clinical imaging.
+
+## Coronary heart reference
+
+The assessment viewer also includes **“Cardiac Anatomy: Coronary arteries of the heart”** by [HannahNewey](https://sketchfab.com/HannahNewey), sourced from [Sketchfab](https://sketchfab.com/3d-models/cardiac-anatomy-coronary-arteries-of-the-heart-00b5f4ec0b984325b453f8df07cd0cb5) and licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). The scene is served from `frontend/public/models/cardiac_anatomy_coronary_arteries_of_the_heart/`; its license text is included beside the model files. The viewer compresses the binary mesh for transfer and applies an estimate color to the vessel meshes as a visual research cue.

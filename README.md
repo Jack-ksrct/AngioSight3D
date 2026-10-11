@@ -1,215 +1,182 @@
 <p align="center">
-  <img src="frontend/public/logo.png" alt="AngioSight" width="104">
+  <img src="frontend/public/logo.png" alt="AngioSight logo" width="132">
 </p>
 
 <h1 align="center">AngioSight</h1>
-<p align="center"><strong>Dataset-derived CAD and LAD&nbsp;/&nbsp;LCX&nbsp;/&nbsp;RCA estimates, drawn onto a real anatomical heart.</strong></p>
-<p align="center">A research prototype: enter a cardiovascular profile, review model estimates, and explore coronary anatomy across 89 officially named BodyParts3D structures.</p>
 
-![AngioSight showing a completed assessment beside the interactive heart](docs/images/app-overview.png)
+<p align="center">
+  <strong>Clinical features in. Research estimates out. Heart anatomy in view.</strong><br>
+  An interactive cardiovascular research prototype built to make model outputs easier to inspect—and their limits harder to miss.
+</p>
 
-> ### ⚠️ Research and education only
-> **AngioSight is not a medical device.** It must not be used for diagnosis, treatment, triage, or any emergency decision, and its output does not replace clinician assessment or diagnostic imaging. The scores come from a 303-record research dataset. Never enter identifiable patient data.
+<p align="center">
+  <a href="https://github.com/Jack-ksrct/AngioSight3D/actions/workflows/ci.yml"><img src="https://github.com/Jack-ksrct/AngioSight3D/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React 18">
+  <img src="https://img.shields.io/badge/3D-Three.js-111111?logo=threedotjs&logoColor=white" alt="Three.js">
+</p>
 
----
+<p align="center">
+  <a href="#get-started">Get started</a> ·
+  <a href="#inside-the-workspace">Explore the workspace</a> ·
+  <a href="#model-performance">Model performance</a> ·
+  <a href="docs/demo-script.md">Demo walkthrough</a>
+</p>
 
-## At a glance
+<p align="center">
+  <img src="docs/images/app-overview.png" alt="AngioSight assessment workspace with clinical inputs, research estimates, and a 3D heart reference" width="900">
+</p>
 
-| | |
-|---|---|
-| Model features | **54** (one constant column dropped at training time) |
-| Targets | **4** — overall `CAD`, plus `LAD` / `LCX` / `RCA` stenosis |
-| Training records | **303** (227 train / 76 stratified holdout, seed 42) |
-| Named 3D regions | **89** — 45 distinct official BodyParts3D concept names |
-| Heart geometry | **105,768** triangles, 63,513 vertices, 4 source materials |
-| API surface | `GET /health` · `GET /metadata` · `POST /predict` |
-| Stack | FastAPI + scikit-learn · React 18 + Vite + Three.js / React&nbsp;Three&nbsp;Fiber |
+> [!CAUTION]
+> **Research and education only. Not a medical device.** Do not use AngioSight for diagnosis, treatment, triage, emergency decisions, or patient care. Its estimates do not replace clinical assessment or diagnostic imaging. The bundled clinical model was developed from 303 records and has not been clinically validated. Never enter identifiable patient information.
 
----
+## The idea
 
-## What it does
+AngioSight brings three things into one review flow: a structured cardiovascular profile, dataset-derived estimates, and an interactive anatomical reference. It is designed for transparent exploration—not to turn a probability into a diagnosis.
 
-- **A 54-field assessment form** grouped into *Profile*, *History*, *Vitals & exam*, *Symptoms*, *Lab panel*, and *Cardiac tests* — with a search box and live "filled / blank" counters. Anything you leave blank is imputed by the backend from training-set statistics, and the UI tells you how many fields that is.
-- **One overall CAD probability plus three vessel probabilities**, with the per-vessel class shown honestly (a 0.68 is displayed as *Stenotic*, not quietly promoted to a diagnosis).
-- **An optional angiography frame.** Upload a PNG or JPEG and a second model trained on CADICA produces a stand-alone frame-level lesion score. It does not alter the clinical CAD estimate because the uploaded frame has no verified patient link to the clinical form.
-- **Interactive heart reference.** The LAD, LCX and RCA meshes shift through green → amber → red as the model's estimate rises. Hovering a structure names it with the official BodyParts3D term; clicking a coronary selects that vessel.
-- **Patient-input sensitivity alongside entered values.** The CAD explanation panel shows each supplied value and how its one-at-a-time substitution into a typical training-profile reference changes the model probability. This is explicitly labeled as a sensitivity comparison, not a causal or additive explanation. Dataset-level permutation importance remains available below it.
-- **Dark and light themes**, a mobile layout that stacks to one column, touch rotation and pinch zoom, and a PWA manifest.
-- **Plain-language boundaries.** Every panel states that it is educational decision support, and the vessel colours are labelled as estimates rather than lesion locations.
+### Inside the workspace
 
-## What it deliberately does not do
+| 🧾 Clinical profile | 📊 Research estimates | 🫀 Anatomy reference |
+|---|---|---|
+| 54 inputs across profile, history, vitals, symptoms, labs, and cardiac tests. Search fields and leave unknown values blank. | CAD plus LAD, LCX, and RCA outputs, with model context and input-sensitivity comparisons. | Rotate and zoom the 3D heart. The assessment reference gives coronary vessels an aggregate estimate color after a prediction. |
 
-No accounts, no database, no assessment history, no analytics, no payments. Submitted values and an optional angiography frame go to the API and are processed in memory only — no image is stored or logged. That is an intentional privacy boundary for a single-operator research workflow — **not** a production multi-user security model.
+### Also included
 
----
+- **Optional angiography scoring:** a separate frame-level research model. Its score is not blended into the clinical estimate.
+- **Honest model context:** held-out metrics, class balance, feature sensitivity, and documented limitations.
+- **A responsive interface:** light and dark themes, touch rotation, and layouts for narrow screens.
+- **A privacy-minded prototype:** submitted inputs and images are processed in memory; the app does not save assessment history.
 
-## The numbers, honestly
+## How the pieces connect
 
-These are holdout scores from the shipped bundle (`models/metrics.json`), stratified 25% split, seed 42, 76 records. **They are not clinical validation.**
+```mermaid
+flowchart LR
+    A[Clinical profile] --> B[FastAPI]
+    B --> C[CAD estimate]
+    B --> D[LAD · LCX · RCA estimates]
+    E[Optional angiography frame] --> F[Separate image model]
+    F --> G[Frame score]
+    C --> H[React workspace]
+    D --> H
+    G --> H
+    H --> I[Interactive 3D reference]
+```
 
-| Target | Positive class | Accuracy | Precision | Recall | F1 | ROC-AUC |
-|---|---|---:|---:|---:|---:|---:|
-| Overall CAD | `CAD` | **84.2%** | 88.9% | 88.9% | 88.9% | 87.9% |
-| LAD | `Stenotic` | 80.3% | 79.6% | 88.6% | 83.9% | 83.9% |
-| LCX | `Stenotic` | 60.5% | 50.0% | 56.7% | 53.1% | 69.4% |
-| RCA | `Stenotic` | 67.1% | 56.7% | 58.6% | 57.6% | 75.0% |
+The angiography branch stays separate because an uploaded frame is not verified as belonging to the person represented by the clinical inputs. The 3D heart is generic reference anatomy; estimate colors do **not** locate a patient-specific lesion.
 
-**Read the vessel rows with care.** On a stratified split of this dataset the majority-class baseline is roughly 71% accuracy for CAD, 58% for LAD, 61% for LCX and 62% for RCA. So the CAD and LAD models clearly beat predicting the majority class, RCA beats it only slightly, and **the LCX model's 60.5% accuracy is indistinguishable from always answering "Normal."** Treat LCX as an open problem, not a working output.
+## Model performance
 
-Feature ranking for overall CAD, by permutation importance on the holdout (a dataset-level explanation baseline, not a patient-specific or causal one):
+The clinical model metrics below use the shipped held-out split: 76 records, stratified 25% split, seed 42. They are development results, **not clinical validation**.
 
-`Typical Chest Pain` · `Age` · `Atypical` · `Region RWMA` · `EF-TTE` · `TG` · `FBS` · `Nonanginal` · `BMI` · `Tinversion`
+| Output | Accuracy | Precision | Recall | F1 | ROC-AUC |
+|---|---:|---:|---:|---:|---:|
+| CAD | **84.2%** | 88.9% | 88.9% | 88.9% | 87.9% |
+| LAD stenosis | 80.3% | 79.6% | 88.6% | 83.9% | 83.9% |
+| LCX stenosis | 60.5% | 50.0% | 56.7% | 53.1% | 69.4% |
+| RCA stenosis | 67.1% | 56.7% | 58.6% | 57.6% | 75.0% |
 
-### The imaging branch is honest about being weak
+**LCX is a known weak point:** its accuracy is around the majority-class baseline, so the current model does not provide useful LCX discrimination. RCA is only slightly above its baseline. Scores are uncalibrated and depend on a small dataset; do not interpret them as an individual’s clinical risk.
 
-The CADICA angiography branch is a real, reproducible model (`backend/train_angiography.py`), but patient-grouped cross-validation shows it does **not** generalise frame by frame:
+The optional CADICA angiography branch also needs substantial improvement. In patient-grouped evaluation it reaches approximately **0.53 frame ROC-AUC** and **0.50 balanced accuracy**—near chance. At the current 0.5 threshold, it predicts every patient positive. Details and methodology: [Imaging model notes](docs/imaging-model.md).
 
-| Level | Metric | Value |
-|---|---|---:|
-| Frame | ROC-AUC | **0.53** (chance) |
-| Frame | Balanced accuracy | 0.50 |
-| Patient (maximum frame score) | Ranking ROC-AUC | 0.55 |
+## Get started
 
-The patch classifier is strong on the patches it saw, but the hottest-window score on unseen patients is chance-level — with 42 patients it appears to learn patient-specific appearance, not a transferable lesion cue. The saved artifact reports max-frame patient AUC of 0.55; at threshold 0.5 it predicts all cases positive, so its 76.2% accuracy is not useful discrimination. The app keeps frame and clinical scores separate. Full write-up: **[docs/imaging-model.md](docs/imaging-model.md)**.
+### Requirements
 
----
+- Python 3.12+
+- Node.js 24 and pnpm 11.19.0
+- A modern browser with WebGL for the 3D viewer
+- The authorized training dataset, placed in `data/` (not included in this repository)
 
-## Quick start
+Install pnpm if needed:
 
-**Requirements:** Python 3.12+, Node.js 22+ (CI uses 24), pnpm 11.19.0, and a browser with WebGL. The app runs in any modern desktop or mobile browser; it is not a native binary. Install pnpm with `npm install --global pnpm@11.19.0`.
+```sh
+npm install --global pnpm@11.19.0
+```
 
 ### Windows
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\windows\setup.ps1          # one-time: venv + pnpm install
-.\scripts\windows\train-models.ps1   # only needed once, to build models/
-.\scripts\windows\start-api.ps1      # terminal 1 -> http://localhost:8000
-.\scripts\windows\start-web.ps1      # terminal 2 -> http://localhost:5173
+.\scripts\windows\setup.ps1
+.\scripts\windows\train-models.ps1   # required before estimates are available
+.\scripts\windows\start-api.ps1      # terminal 1 · http://localhost:8000
+.\scripts\windows\start-web.ps1      # terminal 2 · http://localhost:5173
 ```
 
 ### macOS / Linux
 
 ```sh
 bash scripts/unix/setup.sh
-bash scripts/unix/train-models.sh
-bash scripts/unix/start-api.sh       # terminal 1
-bash scripts/unix/start-web.sh       # terminal 2
+bash scripts/unix/train-models.sh      # required before estimates are available
+bash scripts/unix/start-api.sh         # terminal 1
+bash scripts/unix/start-web.sh         # terminal 2
 ```
 
-### Manual
+The training pipeline reads the first worksheet of the Z-Alizadeh Sani dataset and also accepts CSV and XLSM files. To run it directly from the repository root:
 
-```powershell
-cd backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
-```
-
-```powershell
-cd frontend
-pnpm run dev
-```
-
-The API serves interactive docs at <http://localhost:8000/docs> during local runs. Docs are **disabled by default in Docker** — set `ENABLE_API_DOCS=true` only on a trusted development machine.
-
-### Train the models
-
-The pipeline reads `data/extention of Z-Alizadeh sani   dataset.xlsx` (first worksheet) and also accepts `.csv` and `.xlsm`. Run from the repository root:
-
-```powershell
+```sh
 python -m backend.train --data "data/extention of Z-Alizadeh sani   dataset.xlsx" --output models
 ```
 
-`Cath` is recognised as the overall CAD target and `LAD` / `LCX` / `RCA` as the vessel targets; all four are excluded from the inputs. Override with `--targets CAD LAD LCX RCA`, or supply `--positive-labels ...` when the positive class cannot be inferred. **Inspect `models/metrics.json` before trusting the API.** If the app was already open during training, restart the API and reload the browser so the new feature schema is picked up. The API refuses to predict until a bundle exists.
+Training writes the model bundle and evaluation metrics to `models/`. Inspect `models/metrics.json` before using the API. The dataset and trained bundles are intentionally excluded from Git; follow their licenses and access requirements.
 
-To build the optional angiography branch, point the trainer at a CADICA archive:
+To enable the optional angiography branch, provide an authorized CADICA archive:
 
-```powershell
-python -m backend.train_angiography --zip path\to\cadica.zip --output models
+```sh
+python -m backend.train_angiography --zip path/to/cadica.zip --output models
 ```
 
-It reads the zip directly (never extracts it), writes `models/angiography.joblib` and `models/angiography_metrics.json`, and takes several minutes because it scans 6,126 frames. Without it, the app simply runs tabular-only; the upload control reports that the imaging branch is unavailable. See **[docs/imaging-model.md](docs/imaging-model.md)** for the method and the honest metrics.
+Then run the app in containers:
 
-For a container run: `docker compose up --build` after training. The model directory is mounted read-only into the API container.
-
-### Open it from a phone or tablet
-
-Start both services, then browse to `http://<computer-LAN-address>:5173`. Find the address with `ipconfig` (Windows) or `ip addr` / `ifconfig` (macOS, Linux). Stay on a trusted network and allow port 5173 through the firewall if needed. Do not expose this prototype to the public internet.
-
----
-
-## The 3D heart, and where every name comes from
-
-The viewer draws an assembly of BodyParts3D 4.0 elements — heart structures, the ascending aorta and arch, the superior vena cava, the pulmonary trunk, and the named coronary branches. Long inferior vena cava segments are omitted to keep the initial view focused.
-
-The `.obj` format carries **no anatomical names**, so nothing is guessed from geometry:
-
-- `scripts/build_bodyparts3d_heart.py` rebuilds the assembly from the official release archive and element manifest.
-- `scripts/build_anatomy_labels.py` resolves all **89** regions to names using the release's own IS-A tables (`isa_element_parts.txt` + `isa_inclusion_relation_list.txt`) — for each region, the deepest concept that contains it. All 89 resolve with no ties, giving 45 distinct official English names. It regenerates `frontend/src/anatomyLabels.js` byte-for-byte.
-- The coronary veins and great vessels carry no material of their own in the shipped `.mtl`, so their **anatomy group** supplies their colour. Only the coronary arteries are coloured by estimate.
-
-Attribution, licence, citation, and the full list of modifications: **[docs/anatomy-attribution.md](docs/anatomy-attribution.md)** — BodyParts3D, © The Database Center for Life Science, licensed under **CC BY 4.0**.
-
-**The colours are estimates, not anatomy.** The dataset carries patient-level vessel labels and no lesion coordinates, so nothing in this app locates or sizes a stenosis.
-
----
-
-## Repository layout
-
-```
-backend/    FastAPI app, training pipeline, offline boundary tests
-frontend/   React assessment app + lazy-loaded Three.js anatomy viewer
-scripts/    Platform run scripts + reproducible BodyParts3D build tooling
-docs/       Architecture, data contract, model card, safety, attribution
-data/       Authorized dataset goes here (git-ignored)
-models/     Trained bundle + metrics.json (git-ignored)
+```sh
+docker compose up --build
 ```
 
-## Documentation
+The API container mounts `models/` read-only. API docs are disabled in Docker by default; local development serves them at <http://localhost:8000/docs>.
 
-| Document | What it covers |
+## Anatomy and attribution
+
+The home page uses a labeled realistic heart reference. The assessment uses **“Cardiac Anatomy: Coronary arteries of the heart”** by [HannahNewey](https://sketchfab.com/HannahNewey), licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Its license is included beside the model files, and the full attribution and modifications are documented in [Anatomy attribution](docs/anatomy-attribution.md).
+
+After an estimate is generated, the assessment applies an aggregate color to the coronary vessel meshes using the mean LAD, LCX, and RCA estimates. The source mesh does not identify each branch separately. These colors are a visual research cue—not lesion localization or patient-specific anatomy.
+
+The project also includes BodyParts3D-derived anatomy resources and naming tools. See [the attribution and build notes](docs/anatomy-attribution.md) for source credits, license terms, and the anatomy-label workflow.
+
+## Project map
+
+```text
+backend/       FastAPI service, model training, and API checks
+frontend/      React app, 3D viewers, and shipped anatomy assets
+scripts/       Setup helpers and anatomy build tools
+docs/          Architecture, model card, safety, attribution, and demo guide
+data/          Local authorized training data (not committed)
+models/        Local trained bundles and metrics (not committed)
+```
+
+## Further reading
+
+| Guide | Contents |
 |---|---|
-| [Architecture & API contract](docs/architecture.md) | Service layout, endpoints, request/response shapes |
-| [Dataset & preprocessing contract](docs/data-contract.md) | Columns, encodings, imputation rules |
-| [Model card](docs/model-card.md) | Intended use, metrics, failure modes |
-| [Imaging branch](docs/imaging-model.md) | CADICA lesion detector, honest metrics, fusion policy |
-| [Safety & privacy](docs/safety-and-privacy.md) | Data handling, deployment boundaries |
-| [Anatomy attribution](docs/anatomy-attribution.md) | BodyParts3D source, licence, region naming |
-| [Demo storyboard](docs/demo-script.md) | Walkthrough for a recorded demo |
-| [Evaluation template](docs/evaluation-template.md) | Write-up scaffold for your own results |
+| [Architecture & API](docs/architecture.md) | Services, endpoints, and data flow |
+| [Dataset contract](docs/data-contract.md) | Inputs, encodings, and imputation |
+| [Model card](docs/model-card.md) | Intended use, metrics, and failure modes |
+| [Imaging model](docs/imaging-model.md) | CADICA method and evaluation |
+| [Safety & privacy](docs/safety-and-privacy.md) | Data handling and deployment boundaries |
+| [Anatomy attribution](docs/anatomy-attribution.md) | Model credits, licenses, and anatomy labels |
+| [Demo walkthrough](docs/demo-script.md) | A short guided presentation |
 
 ## Verification
 
 ```powershell
-python -m unittest backend.test_api backend.test_imaging -v   # API boundary + imaging tests
-cd frontend; pnpm install --frozen-lockfile
-pnpm run check:framing                     # 15 viewport shapes: heart stays inside the frame
-pnpm run build                             # production bundle
+python -m unittest backend.test_api backend.test_imaging -v
+cd frontend
+pnpm install --frozen-lockfile
+pnpm run check:framing
+pnpm run build
 ```
 
-`check:framing` is a real regression guard, not a smoke test. It re-derives the viewer's camera frame from its own source constants, projects the heart's bounds through 15 canvas shapes down to 140&nbsp;px wide, and fails if the silhouette would be clipped or leave less than a 2&nbsp;px margin. It also fails if the viewer is ever changed to read Three.js's `state.viewport` again — that property is measured at unit distance, not at the camera, and using it silently breaks the framing.
-
-GitHub Actions runs the Python tests and the frontend build on every push. **CI does not deploy anything.**
+GitHub Actions runs API checks and builds the frontend on pushes and pull requests. It does not deploy the app.
 
 ---
 
-## Limitations
-
-- The dataset is small (~303 records), so holdout scores move substantially between splits. Do not describe a single random split as clinical validation.
-- The vessel models are uneven. LCX in particular performs at roughly the majority-class baseline.
-- Scores are uncalibrated probabilities from a gradient-boosting pipeline; per-patient risk is not what they represent.
-- Class balance is skewed (216/303 records are `CAD`), which inflates apparent accuracy.
-- Anatomy labels are generic BodyParts3D reference geometry, not patient-specific anatomy or any kind of imaging.
-- `Exertional CP` was dropped from the feature set for having no variance in this dataset.
-- The CADICA imaging branch is at chance frame by frame (ROC-AUC ≈ 0.53 under patient-grouped CV). It is reported separately and never changes the clinical estimate because the uploaded scan is not verified as belonging to the patient whose inputs are entered.
-- No TLS, no authentication, no multi-user isolation. Do not put this on the public internet.
-
-## Before using this for real
-
-1. Verify the dataset licence, worksheet, target mappings, and positive classes.
-2. Have a domain expert review the preprocessing and target definitions.
-3. Re-run evaluation with stratified cross-validation and report uncertainty, not one split.
-4. Treat clinical and technical validation as prerequisites, not follow-ups.
-
----
-
-<sub>Built for research and education. Not a medical device. <a href="https://creativecommons.org/licenses/by/4.0/">BodyParts3D</a> geometry © The Database Center for Life Science, CC BY 4.0.</sub>
+<p align="center"><strong>Built for research and education.</strong><br>BodyParts3D, © The Database Center for Life Science, licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</p>

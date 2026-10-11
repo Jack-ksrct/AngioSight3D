@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/app-overview.png" alt="Current AngioSight homepage with a labeled interactive heart and review workflow" width="900">
+  <img src="docs/images/app-overview.png" alt="Current AngioSight assessment workspace with clinical inputs, live model status, research estimates, and the interactive coronary heart" width="900">
 </p>
 
 > [!CAUTION]

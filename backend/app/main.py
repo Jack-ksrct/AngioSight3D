@@ -168,7 +168,7 @@ def build_local_explanation(features: dict[str, Any], bundle: dict[str, Any]) ->
     pipeline = bundle.get("models", {}).get("CAD")
     if pipeline is None:
         return None
-    preprocess = pipeline.named_steps.get("preprocess")
+    preprocess = getattr(pipeline, "named_steps", {}).get("preprocess")
     if preprocess is None or not hasattr(preprocess, "transformers_"):
         return None
     reference: dict[str, Any] = {}
@@ -346,6 +346,20 @@ def predict(payload: PredictionRequest, request: Request):
         raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE", "message": "No trusted model is loaded. Train the model and restart the API."})
     try:
         validate_feature_values(payload.features, app.state.model_metadata.get("feature_schema", {}))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_FEATURES", "message": str(exc)}) from exc
+    if not any(
+        value is not None and (not isinstance(value, str) or value.strip())
+        for value in payload.features.values()
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NO_INPUTS",
+                "message": "Enter at least one clinical value before calculating an estimate.",
+            },
+        )
+    try:
         results = build_predictions(payload.features, bundle)
         explanation = build_local_explanation(payload.features, bundle)
     except ValueError as exc:

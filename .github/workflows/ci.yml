@@ -27,8 +27,8 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r backend/requirements.txt
 
-      - name: Run API boundary and model mapping tests
-        run: python -m unittest backend.test_api -v
+      - name: Run API, imaging, and angiography mapping tests
+        run: python -m unittest backend.test_api backend.test_imaging backend.test_angiography_mapping -v
 
       - name: Set up Node.js
         uses: actions/setup-node@v7

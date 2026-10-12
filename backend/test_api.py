@@ -173,6 +173,13 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 422)
         self.assertEqual(body["error"]["code"], "INVALID_FEATURES")
 
+    def test_prediction_rejects_empty_or_all_blank_clinical_inputs(self):
+        for features in ({}, {"Age": None, "Sex": ""}, {"Age": None, "Sex": "   "}):
+            with self.subTest(features=features):
+                status, _, body = self.request("/predict", "POST", {"features": features})
+                self.assertEqual(status, 422)
+                self.assertEqual(body["error"]["code"], "NO_INPUTS")
+
     def test_oversized_request_is_rejected_before_json_parsing(self):
         status, _, body = self.request("/predict", "POST", None, ((b"content-length", str(MAX_BODY_BYTES + 1).encode()),))
         self.assertEqual(status, 413)

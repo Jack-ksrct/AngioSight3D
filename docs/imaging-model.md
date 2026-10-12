@@ -76,6 +76,15 @@ transfer to unseen patients. With only 42 patients, the model appears to learn
 patient-specific appearance (contrast, catheter, anatomy) rather than a
 transferable lesion cue.
 
+The API keeps this trained artifact for reproducibility but **does not return
+frame probabilities** unless patient-grouped frame AUC, frame balanced
+accuracy, and patient AUC are each above the no-skill baseline, and the saved
+patient threshold predicts both classes. The current artifact fails these
+checks (balanced accuracy 0.4985 and all-positive patient predictions), so an
+image request receives `IMAGING_QUALITY_INSUFFICIENT` while the clinical
+prediction remains available. Passing this minimum gate would not establish
+clinical validity.
+
 The saved evaluation artifact contains max-frame patient ranking (AUC 0.55),
 not the earlier exploratory mean-frame score. The displayed single-frame score
 is not a patient-level CADICA profile and cannot be used to infer a patient's
@@ -91,8 +100,9 @@ The original implementation fused the uploaded frame with the current form
 values using a weight derived from frame AUC. However, the clinical model is
 trained on the separate Z-Alizadeh Sani cohort, while the uploaded image can be
 any frame and has no required CADICA patient identifier. A skill-based weight
-does not establish that the two inputs belong to the same patient. The API now
-reports the frame score separately and keeps the CAD estimate unchanged.
+does not establish that the two inputs belong to the same patient. When image
+scoring is enabled, the API reports the frame score separately and keeps the
+CAD estimate unchanged. The current low-quality artifact is gated as above.
 
 The official CADICA archive contains `metadata.xlsx` with patient clinical data
 and patient-keyed video folders. The archive is not included in this checkout;

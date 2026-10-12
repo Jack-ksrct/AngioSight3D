@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 from pydantic import ValidationError
 
 from backend.app.imaging import window_features
-from backend.app.main import MAX_BODY_BYTES, PredictionRequest, app, build_predictions, validate_feature_values
+from backend.app.main import MAX_BODY_BYTES, PredictionRequest, app, build_predictions, imaging_scoring_status, validate_feature_values
 
 
 class FixedPipeline:
@@ -114,7 +114,6 @@ async def asgi_request(path, method="GET", body=None, extra_headers=(), include_
         if first_message:
             first_message = False
             return {"type": "http.request", "body": payload, "more_body": False}
-        await asyncio.sleep(3600)
         return {"type": "http.disconnect"}
 
     async def send(message):
@@ -261,7 +260,9 @@ class ImagingIntegrationTests(unittest.TestCase):
         app.state.model_metadata = {"trained": True, "feature_schema": {"Age": {"type": "number"}, "Sex": {"type": "category", "options": ["Female", "Male"]}}}
         app.state.model_load_error = None
         app.state.imaging_bundle = tiny_imaging_bundle()
-        app.state.imaging_metadata = {"trained": True, "frame_level": {"n": 9, "roc_auc": 0.9}, "patient_level_vessels_affected": {"n": 4}}
+        app.state.imaging_metadata = {"trained": True, "frame_level": {"n": 9, "roc_auc": 0.9, "balanced_accuracy": 0.85}, "patient_level_vessels_affected": {"n": 4, "max": {"roc_auc": 0.9}, "confusion_0.5": [[2, 1], [1, 5]]}}
+        app.state.imaging_scoring_enabled = True
+        app.state.imaging_unavailable_reason = None
 
     def request(self, path, method="GET", body=None, extra_headers=()):
         return asyncio.run(asgi_request(path, method, body, extra_headers))
@@ -293,6 +294,33 @@ class ImagingIntegrationTests(unittest.TestCase):
         status, _, response = self.request("/metadata")
         self.assertEqual(status, 200)
         self.assertTrue(response["imaging"]["trained"])
+
+    def test_near_chance_model_is_marked_not_scored(self):
+        metadata = {
+            "trained": True,
+            "frame_level": {"roc_auc": 0.5266, "balanced_accuracy": 0.4985},
+            "patient_level_vessels_affected": {
+                "max": {"roc_auc": 0.55},
+                "confusion_0.5": [[0, 10], [0, 32]],
+            },
+        }
+        enabled, reason = imaging_scoring_status(metadata)
+        self.assertFalse(enabled)
+        self.assertIn("no-skill", reason)
+
+    def test_image_score_is_rejected_when_quality_gate_is_closed(self):
+        app.state.imaging_bundle = None
+        app.state.imaging_scoring_enabled = False
+        app.state.imaging_unavailable_reason = "Patient-grouped evaluation is at or below the no-skill baseline."
+        body = {"features": {"Age": 60}, "image": base64.b64encode(tiny_png()).decode()}
+        status, _, response = self.request("/predict", "POST", body)
+        self.assertEqual(status, 503)
+        self.assertEqual(response["error"]["code"], "IMAGING_QUALITY_INSUFFICIENT")
+
+    def test_incomplete_model_quality_metrics_disable_scoring(self):
+        enabled, reason = imaging_scoring_status({"trained": True, "frame_level": {}, "patient_level_vessels_affected": {}})
+        self.assertFalse(enabled)
+        self.assertIn("incomplete", reason)
 
 if __name__ == "__main__":
     unittest.main()

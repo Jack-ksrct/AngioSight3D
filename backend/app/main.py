@@ -49,8 +49,13 @@ async def lifespan(application: FastAPI):
         imaging_metadata = imaging.metadata(MODEL_DIR)
         if imaging_bundle is not None and (not imaging_metadata or not imaging_metadata.get("trained")):
             raise ValueError("Angiography model metadata is missing or marked untrained.")
-        application.state.imaging_bundle = imaging_bundle
+        imaging_enabled, imaging_reason = imaging_scoring_status(imaging_metadata) if imaging_bundle is not None else (False, "No angiography model is installed.")
+        application.state.imaging_bundle = imaging_bundle if imaging_enabled else None
         application.state.imaging_metadata = imaging_metadata or {"trained": False}
+        application.state.imaging_scoring_enabled = imaging_enabled
+        application.state.imaging_unavailable_reason = imaging_reason
+        if imaging_bundle is not None and not imaging_enabled:
+            logger.warning("Angiography scoring disabled: %s", imaging_reason)
     except Exception:
         logger.exception("Model artifacts could not be loaded")
         application.state.model_bundle = None
@@ -228,8 +233,12 @@ def imaging_summary(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
     frame = metadata.get("frame_level", {})
     patient = metadata.get("patient_level_vessels_affected", {})
+    scoring_enabled, reason = imaging_scoring_status(metadata)
     return {
         "trained": True,
+        "scoring_enabled": scoring_enabled,
+        "message": "Frame scoring is disabled until the model passes the no-skill and class-coverage checks." if not scoring_enabled else "Experimental frame score only; it is not linked to the clinical estimate.",
+        "disabled_reason": reason if not scoring_enabled else None,
         "source": metadata.get("source"),
         "evaluation": metadata.get("evaluation"),
         "folds": metadata.get("folds"),
@@ -237,6 +246,29 @@ def imaging_summary(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
         "patient_level_vessels_affected": {"n": patient.get("n"), "roc_auc": patient.get("max", {}).get("roc_auc"), "accuracy": patient.get("max", {}).get("accuracy_0.5")},
         "fusion": {"applied": False, "policy": "disabled until a verified patient link is available"},
     }
+
+
+def imaging_scoring_status(metadata: dict[str, Any] | None) -> tuple[bool, str]:
+    """Refuse frame scores when grouped evaluation is no better than a no-skill rule."""
+    if not metadata or not metadata.get("trained"):
+        return False, "No trained angiography model and evaluation metadata are available."
+    frame = metadata.get("frame_level") or {}
+    patient = metadata.get("patient_level_vessels_affected") or {}
+    auc = frame.get("roc_auc")
+    balanced_accuracy = frame.get("balanced_accuracy")
+    patient_auc = (patient.get("max") or {}).get("roc_auc")
+    if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in (auc, balanced_accuracy, patient_auc)):
+        return False, "Patient-grouped frame and patient metrics are incomplete."
+    if auc <= 0.5 or balanced_accuracy <= 0.5 or patient_auc <= 0.5:
+        return False, "Patient-grouped evaluation is at or below the no-skill baseline."
+    confusion = patient.get("confusion_0.5")
+    if not (isinstance(confusion, list) and len(confusion) == 2 and all(isinstance(row, list) and len(row) == 2 for row in confusion)):
+        return False, "The patient-level threshold confusion matrix is missing or invalid."
+    predicted_negative = confusion[0][0] + confusion[1][0]
+    predicted_positive = confusion[0][1] + confusion[1][1]
+    if predicted_negative == 0 or predicted_positive == 0:
+        return False, "The patient-level 0.5 threshold predicts only one class."
+    return True, ""
 
 
 @app.middleware("http")
@@ -337,7 +369,7 @@ def get_metadata():
     response = dict(app.state.model_metadata or {"trained": False, "message": "Train models before requesting predictions and restart the API."})
     imaging_bundle = getattr(app.state, "imaging_bundle", None)
     imaging_metadata = getattr(app.state, "imaging_metadata", {"trained": False})
-    response["imaging"] = imaging_summary(imaging_metadata) if imaging_bundle is not None else {"trained": False, "message": "No angiography model is loaded. Train it with backend/train_angiography.py and restart the API."}
+    response["imaging"] = imaging_summary(imaging_metadata) if imaging_metadata and imaging_metadata.get("trained") else {"trained": False, "scoring_enabled": False, "message": "No angiography model is loaded. Train it with backend/train_angiography.py and restart the API."}
     return response
 
 
@@ -370,13 +402,19 @@ def predict(payload: PredictionRequest, request: Request):
         logger.error("Prediction failed request_id=%s exception_type=%s", request.state.request_id, type(exc).__name__)
         raise HTTPException(status_code=500, detail={"code": "PREDICTION_FAILED", "message": "The estimate could not be calculated. Check the model bundle and try again."}) from None
     imaging_bundle = getattr(app.state, "imaging_bundle", None)
+    imaging_message = (
+        "Attach a PNG or JPEG angiography frame to activate the imaging branch."
+        if imaging_bundle is not None
+        else getattr(app.state, "imaging_unavailable_reason", None)
+        or "The angiography model is not loaded. Predictions use the tabular model only."
+    )
     imaging_block = {
         "loaded": imaging_bundle is not None,
         "applied": False,
         "lesion_probability": None,
         "mean_window_probability": None,
         "windows": None,
-        "message": "Attach a PNG or JPEG angiography frame to activate the imaging branch." if imaging_bundle is not None else "The angiography model is not loaded. Predictions use the tabular model only.",
+        "message": imaging_message,
     }
     fusion_block = {
         "applied": False,
@@ -387,6 +425,9 @@ def predict(payload: PredictionRequest, request: Request):
     }
     if payload.image:
         if imaging_bundle is None:
+            reason = getattr(app.state, "imaging_unavailable_reason", None)
+            if getattr(app.state, "imaging_scoring_enabled", True) is False:
+                raise HTTPException(status_code=503, detail={"code": "IMAGING_QUALITY_INSUFFICIENT", "message": reason or "Angiography scoring is disabled because grouped evaluation did not pass the minimum quality checks."})
             raise HTTPException(status_code=503, detail={"code": "IMAGING_UNAVAILABLE", "message": "An image was attached but the angiography model is not loaded. Remove the image or train backend/train_angiography.py."})
         try:
             image_bytes = decode_image(payload.image)

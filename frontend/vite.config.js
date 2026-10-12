@@ -5,11 +5,13 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    // The Three.js runtime is 690 KB minified but 179 KB gzipped and is lazy-loaded only near the viewer.
     chunkSizeWarningLimit: 750,
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Keep loaders and controls in a separate async dependency chunk so
+          // the core Three.js runtime stays below Vite's per-chunk warning.
+          if (id.includes('/node_modules/three/examples/jsm/')) return 'three-addons';
           if (id.includes('/node_modules/three/')) return 'three-vendor';
           if (id.includes('/node_modules/@react-three/')) return 'react-three-vendor';
           if (id.includes('/node_modules/three-stdlib/')) return 'anatomy-utils';

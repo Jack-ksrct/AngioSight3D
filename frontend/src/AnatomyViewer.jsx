@@ -248,7 +248,13 @@ function ExternalHeartMesh({ asset, interactive, probabilities }) {
         copiedMaterial.side = THREE.DoubleSide;
         copiedMaterial.userData.owned = true;
         copiedMaterial.userData.estimateVessel = isCoronary && CORONARY_VESSEL_MESHES.has(object.name);
-        if (copiedMaterial.userData.estimateVessel) copiedMaterial.color?.set('#cf413d');
+        if (copiedMaterial.userData.estimateVessel) {
+          // The source glTF has COLOR_0 on every mesh, which Three.js multiplies
+          // by material.color. Its baked red vertex colors otherwise overpower
+          // the estimate palette and make changed estimates look nearly red.
+          copiedMaterial.vertexColors = false;
+          copiedMaterial.color?.set('#cf413d');
+        }
         return copiedMaterial;
       });
       object.material = copied.length === 1 ? copied[0] : copied;

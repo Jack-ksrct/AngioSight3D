@@ -118,7 +118,7 @@ def validate_feature_values(features: dict[str, Any], schema: dict[str, Any]) ->
     if unknown:
         raise ValueError(f"Unknown input features: {', '.join(unknown[:8])}")
     for name, value in features.items():
-        if value is None or value == "":
+        if value is None or (isinstance(value, str) and not value.strip()):
             continue
         spec = schema.get(name, {})
         if spec.get("type") == "number":
@@ -126,12 +126,14 @@ def validate_feature_values(features: dict[str, Any], schema: dict[str, Any]) ->
                 raise ValueError(f"{name} must be a finite number or blank.")
         elif not isinstance(value, str):
             raise ValueError(f"{name} must be text or blank.")
+        elif spec.get("type") == "category" and spec.get("options") and value not in spec["options"]:
+            raise ValueError(f"{name} must be one of the allowed values.")
 
 
 def build_predictions(features: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     expected = bundle["features"]
     row = pd.DataFrame(
-        [{name: (None if features.get(name) == "" else features.get(name)) for name in expected}],
+        [{name: (None if isinstance(features.get(name), str) and not features[name].strip() else features.get(name)) for name in expected}],
         columns=expected,
     )
     results: dict[str, Any] = {}

@@ -51,10 +51,13 @@ class PredictionValidationTests(unittest.TestCase):
                     PredictionRequest(features=features)
 
     def test_rejects_unknown_or_wrongly_typed_features(self):
-        for features in ({"Unknown": 1}, {"Age": "52"}, {"Sex": 1}):
+        for features in ({"Unknown": 1}, {"Age": "52"}, {"Sex": 1}, {"Sex": "Other"}):
             with self.subTest(features=features):
                 with self.assertRaises(ValueError):
                     validate_feature_values(features, self.schema)
+
+    def test_treats_whitespace_category_values_as_blank(self):
+        validate_feature_values({"Sex": "   "}, self.schema)
 
     def test_rejects_non_finite_numbers(self):
         for value in (math.inf, -math.inf, math.nan):
@@ -167,6 +170,9 @@ class ApiIntegrationTests(unittest.TestCase):
 
     def test_invalid_request_is_sanitized(self):
         status, _, body = self.request("/predict", "POST", {"features": {"Age": "52"}})
+        self.assertEqual(status, 422)
+        self.assertEqual(body["error"]["code"], "INVALID_FEATURES")
+        status, _, body = self.request("/predict", "POST", {"features": {"Sex": "Other"}})
         self.assertEqual(status, 422)
         self.assertEqual(body["error"]["code"], "INVALID_FEATURES")
         status, _, body = self.request("/predict", "POST", {"features": {"extra": 1}})

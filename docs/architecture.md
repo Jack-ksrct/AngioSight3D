@@ -11,7 +11,7 @@ The supplied dataset is small and is not evidence of clinical validity. The proj
 | Area | Current requirement and design |
 | --- | --- |
 | Primary users | Researchers, students, and hackathon demonstrators using de-identified or synthetic input. |
-| Main workflow | Train locally → start API → open browser app → enter available inputs → request estimates → review model and holdout context → clear the assessment. |
+| Main workflow | Train locally → start API → open browser app → enter available inputs → request estimates → review cross-validation context → clear the assessment. |
 | Platforms | Responsive browser app for desktop, tablet, and phone; WebGL is required for the interactive anatomy view. A native iOS/Android application is not included. |
 | Persistence | No patient assessment database. Form values and predictions exist in browser memory for the current page session only. Dataset and trained artifacts are local files. |
 | External integrations | None required. The Google Fonts import was removed so the UI does not contact a third-party font service. |

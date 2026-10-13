@@ -6,7 +6,7 @@ Educational demonstration and software integration work only. The models are not
 
 ## Model design
 
-Four independent binary `RandomForestClassifier` pipelines predict CAD, LAD, LCX, and RCA labels. Numeric and categorical preprocessing is inside each scikit-learn pipeline. The fixed holdout metrics and permutation importance in `models/metrics.json` are computed from the held-out rows.
+Four independent binary `RandomForestClassifier` pipelines predict CAD, LAD, LCX, and RCA labels. Numeric and categorical preprocessing is inside each scikit-learn pipeline. The current saved metrics artifact may be from the earlier held-out split; running the trainer now computes stratified out-of-fold metrics and permutation importance, then refits each final pipeline on every labeled row for that outcome.
 
 A second, optional branch contains a patch-level lesion detector trained on CADICA (HOG descriptors over 96 px windows and logistic regression). Under patient-grouped cross-validation its frame-level ROC-AUC is about 0.53, essentially chance. The API withholds frame probabilities while its grouped metrics fail the no-skill/class-coverage gate; it never fuses image scores into the CAD estimate because uploaded frames have no verified link to the entered clinical profile. See `docs/imaging-model.md`.
 
@@ -14,7 +14,7 @@ The assessment also returns a patient-input sensitivity view for CAD. It starts 
 
 ## Evaluation
 
-Accuracy, precision, recall, F1, ROC-AUC, confusion matrix, sample counts, and class counts are reported per outcome. Results are from one stratified random holdout only. They do not establish external validity, subgroup fairness, clinical utility, or probability calibration. Permutation importance is a dataset-level association measure, not an individual explanation or causal effect.
+Accuracy, balanced accuracy, precision, recall, F1, pooled out-of-fold ROC-AUC, fold-mean ROC-AUC and its standard deviation, confusion matrix, sample counts, and class counts are reported per outcome. Cross-validation uses the same small cohort for repeated training and validation folds; estimates can be uncertain and do not establish external validity, subgroup fairness, clinical utility, or probability calibration. Permutation importance is averaged across validation folds and is a dataset-level association measure, not an individual explanation or causal effect.
 
 ## Known limitations
 

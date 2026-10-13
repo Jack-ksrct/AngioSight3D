@@ -11,7 +11,7 @@ All other columns are treated as candidate model features except `CAD`, `LAD`, `
 - Rows with a missing value for a particular target are omitted from that target's fit/evaluation.
 - Numeric fields receive median imputation with missingness indicators, then standard scaling.
 - Categorical fields receive most-frequent imputation and one-hot encoding; unseen categories are ignored at inference.
-- Split is stratified per target, with 25% held out by default and random seed 42.
+- Evaluation uses stratified out-of-fold predictions (5 folds by default, seed 42). Each fold fits its own preprocessing pipeline to avoid validation leakage. After evaluation, the deployed model is refit on every labeled row for that target.
 - Labels recognized as positive include `1`, `yes`, `true`, `cad`, `disease`, `positive`, `present`, `stenosis`, `stenotic`, and `affected`. Otherwise the lexicographically last class is selected as positive. **Check `positive_class` in `metrics.json` for every target before interpreting output.**
 
 ## Review before training

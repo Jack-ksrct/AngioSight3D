@@ -1,4 +1,4 @@
-"""Train leakage-aware binary classifiers and write holdout metrics."""
+"""Evaluate clinical classifiers with stratified CV, then refit on all rows."""
 import argparse
 import json
 import platform
@@ -13,8 +13,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
 from sklearn.inspection import permutation_importance
 
 TARGETS = ["CAD", "LAD", "LCX", "RCA"]
@@ -36,9 +36,11 @@ def main():
     parser.add_argument("--sheet", default=None, help="Excel worksheet name. Defaults to the first worksheet.")
     parser.add_argument("--targets", nargs=4, default=TARGETS, metavar=("CAD", "LAD", "LCX", "RCA"))
     parser.add_argument("--positive-labels", nargs=4, default=None, metavar=("CAD", "LAD", "LCX", "RCA"), help="Optional exact positive class labels in CAD, LAD, LCX, RCA order")
-    parser.add_argument("--test-size", type=float, default=0.25)
+    parser.add_argument("--folds", type=int, default=5, help="Number of stratified cross-validation folds (minimum 2).")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
+    if args.folds < 2:
+        parser.error("--folds must be at least 2")
     data_path, out = Path(args.data), Path(args.output)
     source_sheet = None
     if data_path.suffix.casefold() in {".xlsx", ".xlsm"}:
@@ -96,18 +98,32 @@ def main():
         x = X.loc[valid]
         counts = np.bincount(y)
         if counts.min() < 2:
-            raise ValueError(f"Target {column!r} has too few examples in a class for stratified holdout: {negative_label}={int(counts[0])}, {positive_label}={int(counts[1])}")
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=args.test_size, random_state=args.seed, stratify=y)
+            raise ValueError(f"Target {column!r} has too few examples for stratified cross-validation: {negative_label}={int(counts[0])}, {positive_label}={int(counts[1])}")
+        n_splits = min(args.folds, int(counts.min()))
         pipeline = Pipeline([("preprocess", clone(preprocess)), ("classifier", RandomForestClassifier(n_estimators=300, class_weight="balanced", min_samples_leaf=2, random_state=args.seed, n_jobs=-1))])
-        pipeline.fit(x_train, y_train)
-        pred = pipeline.predict(x_test)
-        proba = pipeline.predict_proba(x_test)[:, 1]
-        report = {"positive_class": positive_label, "classes": [negative_label, positive_label], "n": int(len(y)), "train_n": int(len(y_train)), "test_n": int(len(y_test)), "class_counts": {negative_label: int((y == 0).sum()), positive_label: int((y == 1).sum())}, "accuracy": float(accuracy_score(y_test, pred)), "precision": float(precision_score(y_test, pred, zero_division=0)), "recall": float(recall_score(y_test, pred, zero_division=0)), "f1": float(f1_score(y_test, pred, zero_division=0)), "roc_auc": float(roc_auc_score(y_test, proba)), "confusion_matrix": confusion_matrix(y_test, pred).tolist()}
-        try:
-            imp = permutation_importance(pipeline, x_test, y_test, n_repeats=5, random_state=args.seed, scoring="roc_auc")
-            report["permutation_importance"] = sorted([{"feature": str(f), "mean": float(m), "std": float(s)} for f, m, s in zip(feature_columns, imp.importances_mean, imp.importances_std)], key=lambda z: z["mean"], reverse=True)[:15]
-        except Exception as exc:
-            report["permutation_importance_error"] = str(exc)
+        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=args.seed)
+        # Each fold fits preprocessing independently, so imputation/scaling/encoding
+        # cannot learn from its validation rows. OOF predictions cover every row.
+        proba = cross_val_predict(pipeline, x, y, cv=cv, method="predict_proba", n_jobs=1)[:, 1]
+        pred = (proba >= 0.5).astype(int)
+        fold_auc = []
+        importances = []
+        for fold_index, (train_idx, valid_idx) in enumerate(cv.split(x, y)):
+            fold_model = clone(pipeline).fit(x.iloc[train_idx], y[train_idx])
+            fold_proba = fold_model.predict_proba(x.iloc[valid_idx])[:, 1]
+            fold_auc.append(float(roc_auc_score(y[valid_idx], fold_proba)))
+            try:
+                imp = permutation_importance(fold_model, x.iloc[valid_idx], y[valid_idx], n_repeats=3, random_state=args.seed + fold_index, scoring="roc_auc")
+                importances.append(imp.importances_mean)
+            except Exception:
+                pass
+        report = {"positive_class": positive_label, "classes": [negative_label, positive_label], "n": int(len(y)), "evaluation": "stratified_out_of_fold", "folds": n_splits, "class_counts": {negative_label: int((y == 0).sum()), positive_label: int((y == 1).sum())}, "accuracy": float(accuracy_score(y, pred)), "balanced_accuracy": float(balanced_accuracy_score(y, pred)), "precision": float(precision_score(y, pred, zero_division=0)), "recall": float(recall_score(y, pred, zero_division=0)), "f1": float(f1_score(y, pred, zero_division=0)), "roc_auc": float(roc_auc_score(y, proba)), "roc_auc_fold_mean": float(np.mean(fold_auc)), "roc_auc_fold_std": float(np.std(fold_auc, ddof=1)) if len(fold_auc) > 1 else 0.0, "confusion_matrix": confusion_matrix(y, pred).tolist()}
+        if importances:
+            mean_importance = np.mean(importances, axis=0)
+            std_importance = np.std(importances, axis=0, ddof=1) if len(importances) > 1 else np.zeros_like(mean_importance)
+            report["permutation_importance"] = sorted([{"feature": str(f), "mean": float(m), "std": float(s)} for f, m, s in zip(feature_columns, mean_importance, std_importance)], key=lambda z: z["mean"], reverse=True)[:15]
+        # The deployed artifact uses every available labeled row after evaluation.
+        pipeline.fit(x, y)
         models[logical_name] = {"pipeline": pipeline, "classes": [negative_label, positive_label]}
         reports[logical_name] = report
     out.mkdir(parents=True, exist_ok=True)
@@ -119,7 +135,7 @@ def main():
         else:
             values = sorted(str(v) for v in X[col].dropna().unique())
             schema[str(col)] = {"type": "category", "options": values[:100]}
-    (out / "metrics.json").write_text(json.dumps({"trained": True, "seed": args.seed, "test_size": args.test_size, "source_data": data_path.name, "source_sheet": source_sheet, "target_columns": target_columns, "constant_features_excluded": constant_features, "categorical_normalizations": {"Sex: Fmale -> Female": sex_normalized_count} if sex_normalized_count else {}, "features": feature_columns, "feature_schema": schema, "targets": reports, "runtime": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__, "scikit_learn": sklearn.__version__, "joblib": joblib.__version__}, "safety": "Research/educational only; not clinical validation."}, indent=2), encoding="utf-8")
+    (out / "metrics.json").write_text(json.dumps({"trained": True, "seed": args.seed, "evaluation_method": "stratified cross-validation with out-of-fold predictions; deployed pipelines refit on all labeled rows", "requested_folds": args.folds, "source_data": data_path.name, "source_sheet": source_sheet, "target_columns": target_columns, "constant_features_excluded": constant_features, "categorical_normalizations": {"Sex: Fmale -> Female": sex_normalized_count} if sex_normalized_count else {}, "features": feature_columns, "feature_schema": schema, "targets": reports, "runtime": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__, "scikit_learn": sklearn.__version__, "joblib": joblib.__version__}, "safety": "Research/educational only; not clinical validation."}, indent=2), encoding="utf-8")
     print(f"Saved model bundle and metrics to {out.resolve()}")
 
 

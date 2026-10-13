@@ -66,7 +66,7 @@ The angiography branch stays separate because an uploaded frame is not verified 
 
 ## Model performance
 
-The clinical model metrics below use the shipped held-out split: 76 records, stratified 25% split, seed 42. They are development results, **not clinical validation**.
+The numbers below describe the currently saved evaluation snapshot: 76 held-out records from a stratified 25% split, seed 42. They are development results, **not clinical validation**. The training command now reports stratified out-of-fold estimates and refits the saved models on all labeled records; rerun it to replace the older metrics artifact.
 
 | Output | Accuracy | Precision | Recall | F1 | ROC-AUC |
 |---|---:|---:|---:|---:|---:|

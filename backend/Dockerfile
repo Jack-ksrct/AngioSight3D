@@ -5,9 +5,9 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY backend/train.py ./train.py
-COPY data/extention\ of\ Z-Alizadeh\ sani\ \ \ dataset.xlsx ./data/dataset.xlsx
+COPY data ./data
 # Train the clinical models at build time so the bundle is baked into the image
-RUN python train.py --data ./data/dataset.xlsx --output /models
+RUN python train.py --data "data/extention of Z-Alizadeh sani   dataset.xlsx" --output /models
 ENV MODEL_DIR=/models
 RUN addgroup --system angiosight && adduser --system --ingroup angiosight --no-create-home angiosight
 USER angiosight

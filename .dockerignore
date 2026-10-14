@@ -6,11 +6,8 @@
 **/__pycache__/
 **/*.py[cod]
 **/.env
-data/**
-!data/.gitkeep
-# Trained bundles are runtime-mounted (docker-compose ./models:/models:ro),
-# never baked into an image. Excluding them keeps builds reproducible and
-# guarantees no COPY can pick up a host-specific artifact.
+# Trained bundles are created at build time (not runtime-mounted), so models/
+# is excluded to avoid picking up stale local artifacts.
 models/**
 !models/.gitkeep
 *.log

@@ -104,7 +104,7 @@ export default function App() {
   const [features, setFeatures] = useState({});
   const [predictions, setPredictions] = useState(null);
   const [colorVessels, setColorVessels] = useState(false);
-  const [showLabeledVesselView, setShowLabeledVesselView] = useState(false);
+  const showLabeledVesselView = false;
   const [hoveredPart, setHoveredPart] = useState(null);
   const [explanation, setExplanation] = useState(null);
   const [selected, setSelected] = useState('LAD');
@@ -305,8 +305,8 @@ export default function App() {
         <div className="input-footer"><p className="microcopy" role="status" aria-live="polite">{status}</p><button className="primary-button" type="button" onClick={predict} disabled={busy||featureKeys.length===0}><span><Sparkles size={16}/>{busy?'Calculating estimate…':'Calculate estimate'}</span><ArrowUpRight size={17}/></button><p className="privacy-note"><ShieldCheck size={12}/> Your details are used for this estimate and aren’t stored by this app.</p></div>
       </aside>
       <section className="panel viz-panel"><div className="panel-head"><div><span className="step">02</span><div><h2>Heart anatomy</h2><span className="panel-subtitle">{colorVessels && showLabeledVesselView ? 'NAMED CORONARY ANATOMY · PER-VESSEL ESTIMATES' : colorVessels ? 'CORONARY ANATOMY · AGGREGATE ESTIMATE' : 'CARDIAC ANATOMY · CORONARY ARTERIES'}</span></div></div><span className="drag-hint">Drag to rotate · scroll or pinch to zoom</span></div>
-        <div className="anatomy-view-tools"><div className="anatomy-view-name">{showLabeledVesselView && colorVessels ? 'BodyParts3D · named coronary branches' : 'Cardiac Anatomy: Coronary arteries of the heart'}</div>{colorVessels&&<button type="button" className="anatomy-view-toggle" aria-pressed={showLabeledVesselView} onClick={()=>{setShowLabeledVesselView(value=>!value);setHoveredPart(null);}}>{showLabeledVesselView?'Show selected coronary model':'Show separate vessel colors'}</button>}</div>
-        <div className="viewer"><DeferredAnatomyViewer probabilities={probabilities} onSelect={setSelected} onHover={setHoveredPart} view="anterior" asset={showLabeledVesselView && colorVessels ? 'bodyparts' : 'coronary'}/><div className="viewer-label"><span>Anterior view</span><span>{showLabeledVesselView && colorVessels ? 'Named coronary anatomy' : 'Cardiac Anatomy: Coronary arteries of the heart'}</span></div>{hoveredPart&&<div className="anatomy-hover-label" aria-live="polite"><b>{hoveredPart.name}</b><span>{hoveredPart.group}</span></div>}<div className="viewer-corner viewer-corner-tl"/><div className="viewer-corner viewer-corner-br"/></div>
+        <div className="anatomy-view-tools"><div className="anatomy-view-name">Cardiac Anatomy: Coronary arteries of the heart</div></div>
+        <div className="viewer"><DeferredAnatomyViewer probabilities={probabilities} onSelect={setSelected} onHover={setHoveredPart} view="anterior" asset="coronary"/><div className="viewer-label"><span>Anterior view</span><span>Cardiac Anatomy: Coronary arteries of the heart</span></div>{hoveredPart&&<div className="anatomy-hover-label" aria-live="polite"><b>{hoveredPart.name}</b><span>{hoveredPart.group}</span></div>}<div className="viewer-corner viewer-corner-tl"/><div className="viewer-corner viewer-corner-br"/></div>
         <div className="structure-readout legend estimate-legend" aria-label="Coronary vessel estimates">
           <span className="legend-title">Coronary estimates</span>
           {vessels.map(v => {

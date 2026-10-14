@@ -4,13 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
-# The trained bundle is not baked into the image: docker-compose.yml mounts
-# ./models over this path read-only, and training artifacts are built by
-# backend.train (and, optionally, backend.train_angiography for the angiography
-# branch) rather than trusted at build time. Without a bundle the API starts in
-# degraded mode (/health reports model_loaded: false) and /predict returns 503
-# until one is mounted. A missing angiography.joblib only disables the optional
-# imaging branch.
+COPY backend/train.py ./train.py
+COPY data/extention\ of\ Z-Alizadeh\ sani\ \ \ dataset.xlsx ./data/dataset.xlsx
+# Train the clinical models at build time so the bundle is baked into the image
+RUN python train.py --data ./data/dataset.xlsx --output /models
 ENV MODEL_DIR=/models
 RUN addgroup --system angiosight && adduser --system --ingroup angiosight --no-create-home angiosight
 USER angiosight
